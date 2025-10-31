@@ -1,490 +1,200 @@
 # forge v1 - Actionable Implementation Plan
 
-## Key Decisions
-
-**From the detailed Git plan (keeping):**
-- ✅ Use `git merge-tree --write-tree` for conflict detection (no working tree!)
-- ✅ Server-side merge: `merge-tree → commit-tree → update-ref`
-- ✅ Operational clones separate from bare repos
-- ✅ post-receive hook triggers events
-- ✅ SQLite schema with repos/MRs/CI jobs
-
-**From NixOS plan (keeping):**
-- ✅ Deploy via `just hetzner` only
-- ✅ Data in `/var/lib/forge/`
-- ✅ NixOS service module pattern
-- ✅ Bun/TypeScript (not Rust)
-- ✅ Caddy integration
-
-**Simplifications:**
-- ❌ No separate `git` user with git-shell (overkill for single-user)
-- ❌ No Unix socket (just HTTP on localhost)
-- ❌ No per-job systemd units (spawn processes from main service)
-- ✅ Single `forge` user owns everything
+## Key Principles
+- Git is the source of truth for repositories and merge requests; v1 stores no duplicate state in SQLite.
+- Every request derives merge request data straight from refs and commits (`git for-each-ref`, `git merge-tree`, `git diff`).
+- CI status is recorded in filesystem artifacts (`logs/<repo>/<commit>.*`) so restarts never desync logical state.
+- The forge daemon runs everything (HTTP + web UI + CI executor) under a single `forge` user; no worker fleet.
+- Bun/TypeScript remain the stack, Datastar drives the minimal interactive UI, and server-side rendering keeps pages fast.
+- Deploy exclusively through the existing NixOS/`just hetzner` pipeline with data rooted at `/var/lib/forge`.
 
 ---
 
 ## Architecture
-
 ```
 /var/lib/forge/
-├── repos/              # Bare git repositories
-│   ├── yeet.git/
-│   └── boom.git/
-├── work/              # Operational clones (for CI/merges)
-│   ├── yeet/
-│   └── boom/
-├── logs/              # CI logs
-│   └── <job_id>.log
-└── forge.db          # SQLite database
+├── repos/               # Bare git repositories exposed over SSH
+│   ├── project-a.git/
+│   └── project-b.git/
+├── work/                # Operational clones used for CI and merges
+│   ├── project-a/
+│   └── project-b/
+└── logs/                # CI output and status files
+    └── project-a/
+        └── <commit>.{log,status}
 ```
 
-**Users:**
-- `forge`: owns all data, runs web server, executes CI jobs
+**Merge Requests from Git**
+- Enumerate repos by scanning `/var/lib/forge/repos/*.git`.
+- Feature branches are `refs/heads/*` excluding the default branch (`master` for v1). No record means no MR.
+- For each branch we derive at request time:
+  - tip commit (`git rev-parse <branch>`)
+  - merge base with `master` (`git merge-base`)
+  - ahead/behind counts (`git rev-list --left-right --count`)
+  - conflict check (`git merge-tree --write-tree master branch`)
+  - diff (`git diff --no-color base..branch`)
+- Branch deletion automatically removes the MR because the ref disappears.
 
-**Processes:**
-- `forge.service`: Bun server (SSR + API + CI job runner)
+**CI Execution**
+- The post-receive hook notifies the forge server for branch updates.
+- The server kicks off CI immediately (sequential for v1) inside the appropriate worktree clone.
+- Each run streams stdout/err to `logs/<repo>/<commit>.log` and writes a tiny JSON status file on completion (`passed/failed`, exit code, timestamps).
+- Page renders read the latest status file for the branch tip; if none exists, show "Not run" or "Running" while the process is active.
+
+**Processes**
+- `forge.service`: Bun HTTP server exposing HTML, JSON endpoints, and running CI jobs.
+- No background queue or timers—only hook-driven updates and on-demand reads.
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: Project Setup (Day 1)
+### Phase 1: Project Bootstrap (Day 1)
+1. Initialize the project structure:
+   ```bash
+   cd ~/code
+   mkdir -p forge && cd forge
+   bun init -y
+   mkdir -p src/{git,http,ci,views,utils}
+   touch src/index.ts src/server.ts
+   ```
+2. Create `flake.nix` wiring in Bun and the runtime entrypoint:
+   ```nix
+   {
+     description = "Forge - Minimal Git Server";
 
-1. **Create forge repo structure:**
-```bash
-cd ~/code
-mkdir forge && cd forge
-bun init -y
+     inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-mkdir -p src/{db,git,routes,views,ci}
-touch src/index.ts
-touch src/server.ts
-```
+     outputs = { self, nixpkgs }: {
+       packages.x86_64-linux.default =
+         nixpkgs.legacyPackages.x86_64-linux.stdenv.mkDerivation {
+           name = "forge";
+           src = ./.;
+           buildInputs = [ nixpkgs.legacyPackages.x86_64-linux.bun ];
 
-2. **Create flake.nix:**
-```nix
-{
-  description = "Forge - Minimal Git Server";
-  
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  
-  outputs = { self, nixpkgs }: {
-    packages.x86_64-linux.default = 
-      nixpkgs.legacyPackages.x86_64-linux.stdenv.mkDerivation {
-        name = "forge";
-        src = ./.;
-        buildInputs = [ nixpkgs.legacyPackages.x86_64-linux.bun ];
-        
-        buildPhase = ''
-          export HOME=$TMPDIR
-          bun install --frozen-lockfile
-        '';
-        
-        installPhase = ''
-          mkdir -p $out/bin $out/app
-          cp -r src node_modules package.json $out/app/
-          cat > $out/bin/forge <<EOF
-          #!/usr/bin/env bash
-          exec ${nixpkgs.legacyPackages.x86_64-linux.bun}/bin/bun $out/app/src/index.ts
-          EOF
-          chmod +x $out/bin/forge
-        '';
-      };
-  };
-}
-```
+           buildPhase = ''
+             export HOME=$TMPDIR
+             bun install --frozen-lockfile || bun install
+           '';
 
-3. **Install dependencies:**
-```bash
-bun add better-sqlite3
-bun add -d @types/bun @types/better-sqlite3
-```
+          installPhase = ''
+            mkdir -p $out/bin $out/app
+            cp -r src package.json bun.lockb $out/app/ 2>/dev/null || true
+            if [ -f tsconfig.json ]; then cp tsconfig.json $out/app/; fi
+            cat > $out/bin/forge <<EOF
+            #!/usr/bin/env bash
+            exec ${nixpkgs.legacyPackages.x86_64-linux.bun}/bin/bun $out/app/src/index.ts
+            EOF
+            chmod +x $out/bin/forge
+          '';
+         };
+     };
+   }
+   ```
+3. Add runtime dependencies (Datastar for UI hydration, optional helper libs):
+   ```bash
+   bun add @sudodevnull/datastar
+   bun add -d @types/bun
+   ```
 
-### Phase 2: Database & Git Plumbing (Day 1-2)
+### Phase 2: Git & Filesystem Primitives (Day 1-2)
+1. Implement repo discovery (`src/git/repos.ts`):
+   ```typescript
+   export async function listBareRepos(dataDir: string) {
+     const reposPath = join(dataDir, 'repos');
+     const entries = await readdir(reposPath, { withFileTypes: true });
+     return entries
+       .filter(e => e.isDirectory() && e.name.endsWith('.git'))
+       .map(e => ({ name: e.name.replace(/\.git$/, ''), path: join(reposPath, e.name) }));
+   }
+   ```
+2. Implement branch introspection (`src/git/branches.ts`):
+   - `listBranches(repoPath)` using `git for-each-ref --format='%(refname:short)' refs/heads`.
+   - Filter out the mainline branch (`master`).
+3. Implement merge request descriptor (`src/git/merge-request.ts`):
+   ```typescript
+   export async function describeMergeRequest(repoPath: string, branch: string) {
+     const base = await runGit(repoPath, ['merge-base', 'master', branch]);
+     const head = await runGit(repoPath, ['rev-parse', branch]);
+     const conflicts = await mergeConflicts(repoPath, branch);
+     const diff = await runGit(repoPath, ['diff', '--no-color', `${base}..${branch}`]);
+     const aheadBehind = await runGit(repoPath, ['rev-list', '--left-right', '--count', `${branch}...master`]);
+     return { branch, head, base, conflicts, diff, aheadBehind: parseAheadBehind(aheadBehind) };
+   }
+   ```
+4. Build a thin `runGit` helper that wraps Bun’s `spawn` with consistent error handling.
 
-4. **Create schema (`src/db/schema.ts`):**
-```typescript
-import Database from 'better-sqlite3';
-
-export function initDB(path: string) {
-  const db = new Database(path);
-  
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS repos (
-      name TEXT PRIMARY KEY,
-      path TEXT NOT NULL
-    );
-    
-    CREATE TABLE IF NOT EXISTS merge_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      repo TEXT NOT NULL,
-      branch TEXT NOT NULL,
-      head_commit TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('pending','running','passed','failed')),
-      conflicts TEXT NOT NULL CHECK(conflicts IN ('unknown','clean','conflicted')) DEFAULT 'unknown',
-      last_ci_job_id INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(repo, branch),
-      FOREIGN KEY (repo) REFERENCES repos(name)
-    );
-    
-    CREATE TABLE IF NOT EXISTS ci_jobs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      mr_id INTEGER NOT NULL,
-      commit TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('running','passed','failed','canceled')),
-      log_path TEXT,
-      started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      finished_at DATETIME,
-      exit_code INTEGER,
-      FOREIGN KEY (mr_id) REFERENCES merge_requests(id)
-    );
-  `);
-  
-  return db;
-}
-```
-
-5. **Git operations (`src/git/operations.ts`):**
-```typescript
-import { spawn } from 'bun';
-
-export async function checkConflicts(
-  repoPath: string,
-  branch: string
-): Promise<'clean' | 'conflicted'> {
-  const proc = spawn([
-    'git', 'merge-tree', '--write-tree',
-    'refs/heads/master', branch
-  ], { cwd: repoPath, stdout: 'pipe', stderr: 'pipe' });
-  
-  const exitCode = await proc.exited;
-  return exitCode === 0 ? 'clean' : 'conflicted';
-}
-
-export async function getDiff(
-  repoPath: string,
-  branch: string
-): Promise<string> {
-  // Get merge base
-  const baseProc = spawn([
-    'git', 'merge-base', 'refs/heads/master', branch
-  ], { cwd: repoPath, stdout: 'pipe' });
-  const base = (await new Response(baseProc.stdout).text()).trim();
-  
-  // Get diff from base to branch
-  const diffProc = spawn([
-    'git', 'diff', '--no-color', base, branch
-  ], { cwd: repoPath, stdout: 'pipe' });
-  
-  return await new Response(diffProc.stdout).text();
-}
-
-export async function serverSideMerge(
-  repoPath: string,
-  branch: string
-): Promise<{ success: boolean; error?: string }> {
-  // 1. Create merged tree
-  const treeProc = spawn([
-    'git', 'merge-tree', '--write-tree',
-    'refs/heads/master', branch
-  ], { cwd: repoPath, stdout: 'pipe', stderr: 'pipe' });
-  
-  if (await treeProc.exited !== 0) {
-    return { success: false, error: 'Merge conflicts' };
-  }
-  
-  const tree = (await new Response(treeProc.stdout).text()).trim();
-  
-  // 2. Create merge commit
-  const msg = `Merge ${branch} into master`;
-  const commitProc = spawn([
-    'git', 'commit-tree', tree,
-    '-p', 'refs/heads/master',
-    '-p', branch,
-    '-m', msg
-  ], { cwd: repoPath, stdout: 'pipe' });
-  
-  const commit = (await new Response(commitProc.stdout).text()).trim();
-  
-  // 3. Update master ref
-  await spawn([
-    'git', 'update-ref', 'refs/heads/master', commit
-  ], { cwd: repoPath }).exited;
-  
-  return { success: true };
-}
-```
-
-### Phase 3: Web Server & Routes (Day 2-3)
-
-6. **Basic server (`src/server.ts`):**
-```typescript
-export function createServer(db, config) {
-  return {
-    port: config.port,
-    
-    async fetch(req: Request) {
-      const url = new URL(req.url);
-      
-      // Route to handlers
-      if (url.pathname === '/') return homeHandler(db);
-      if (url.pathname.startsWith('/r/')) return repoHandler(db, url);
-      if (url.pathname === '/hooks/post-receive') {
-        return await postReceiveHandler(db, req);
-      }
-      
-      return new Response('Not Found', { status: 404 });
-    }
-  };
-}
-```
-
-7. **post-receive hook handler:**
-```typescript
-async function postReceiveHandler(db, req: Request) {
-  const { repo, ref, newrev } = await req.json();
-  const branch = ref.replace('refs/heads/', '');
-  
-  if (branch === 'master') return new Response('OK');
-  
-  // Create/update MR
-  const mr = db.prepare(`
-    INSERT INTO merge_requests (repo, branch, head_commit, status)
-    VALUES (?, ?, ?, 'pending')
-    ON CONFLICT(repo, branch) DO UPDATE SET
-      head_commit = excluded.head_commit,
-      updated_at = CURRENT_TIMESTAMP
-  `).run(extractRepoName(repo), branch, newrev);
-  
-  // Enqueue CI
-  await runCI(db, mr.lastInsertRowid);
-  
-  return new Response('OK');
-}
-```
+### Phase 3: HTTP Server & Routing (Day 2-3)
+1. `src/server.ts` creates the Bun server, wiring `fetch` to route handlers.
+2. Routes:
+   - `/` → list repos (calls `listBareRepos`).
+   - `/r/:repo` → list merge requests (scan branches, map through `describeMergeRequest`).
+   - `/r/:repo/mr/:branch` → detailed view (re-run descriptors, load CI status/log excerpt).
+   - `/hooks/post-receive` → accepts JSON from hook and triggers CI.
+3. Ensure handlers gracefully handle long-running Git commands (timeouts, error responses).
 
 ### Phase 4: CI Runner (Day 3)
-
-8. **CI execution (`src/ci/runner.ts`):**
-```typescript
-export async function runCI(db, mrId: number) {
-  const mr = db.prepare('SELECT * FROM merge_requests WHERE id = ?').get(mrId);
-  const workDir = `/var/lib/forge/work/${mr.repo}`;
-  const logPath = `/var/lib/forge/logs/${mrId}.log`;
-  
-  // Create CI job
-  const job = db.prepare(`
-    INSERT INTO ci_jobs (mr_id, commit, status, log_path)
-    VALUES (?, ?, 'running', ?)
-  `).run(mrId, mr.head_commit, logPath);
-  
-  // Update/clone work directory
-  await updateWorkDir(workDir, mr.repo, mr.branch);
-  
-  // Run nix run .#ci
-  const logFile = Bun.file(logPath, { create: true });
-  const writer = logFile.writer();
-  
-  const proc = spawn(['nix', 'run', '.#ci'], {
-    cwd: workDir,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  
-  // Stream output to log
-  proc.stdout.pipeTo(writer);
-  proc.stderr.pipeTo(writer);
-  
-  const exitCode = await proc.exited;
-  const status = exitCode === 0 ? 'passed' : 'failed';
-  
-  // Update job and MR
-  db.prepare(`
-    UPDATE ci_jobs SET status = ?, exit_code = ?, finished_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(status, exitCode, job.lastInsertRowid);
-  
-  db.prepare('UPDATE merge_requests SET status = ? WHERE id = ?')
-    .run(status, mrId);
-}
-```
+1. Implement `updateWorktree(workDir, repoPath, branch)` that clones on first run and fetches branch updates afterwards.
+2. `runCI({ repo, branch, commit })` should:
+   - create `logs/<repo>` if missing;
+   - stream `nix run .#ci` output into `<commit>.log`;
+   - write `<commit>.status` JSON `{ status, exitCode, startedAt, finishedAt }` when done;
+   - expose in-memory state for "running" to cover the window before the status file lands.
+3. Serialize CI executions per repo (simple mutex) so v1 never runs two jobs simultaneously.
 
 ### Phase 5: Views with Datastar (Day 3-4)
+1. Render HTML templates (`src/views`) that:
+   - show repo → branch list with conflict + CI badges;
+   - display diff/CI log in the MR detail view;
+   - expose a merge button wired to `POST /r/:repo/mr/:branch/merge` once CI passed and conflicts clean.
+2. Use Datastar for lightweight interactivity (polling CI status, triggering merges without full reload).
 
-9. **MR detail view (`src/views/mr.tsx` or template string):**
-```typescript
-export function renderMR(mr, diff, ciJob) {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>MR: ${mr.branch}</title>
-      <script type="module" src="https://cdn.jsdelivr.net/npm/@sudodevnull/datastar"></script>
-    </head>
-    <body>
-      <h1>${mr.repo} / ${mr.branch}</h1>
-      <div class="ci-status">
-        <h2>CI: ${mr.status}</h2>
-        <pre>${ciJob?.log || 'Running...'}</pre>
-      </div>
-      <div class="diff">
-        <h2>Changes</h2>
-        <pre>${escapeHtml(diff)}</pre>
-      </div>
-      <button 
-        data-on-click="$$post('/r/${mr.repo}/mr/${mr.branch}/merge')"
-        ${mr.status !== 'passed' || mr.conflicts !== 'clean' ? 'disabled' : ''}
-      >
-        Merge to master
-      </button>
-    </body>
-    </html>
-  `;
-}
-```
+### Phase 6: Merge & Update Paths (Day 4)
+1. Implement server-side merge handler using `git merge-tree` + `commit-tree` + `update-ref`.
+2. After a successful merge, delete the feature branch (`git update-ref -d refs/heads/<branch>`).
+3. Because state comes from refs, the branch disappearing immediately removes it from the MR list.
 
-### Phase 6: NixOS Integration (Day 4)
+### Phase 7: NixOS Integration (Day 4)
+1. Create `~/configs/hetzner/forge.nix` to define the `forge` service, system user, directories, and environment variables (no database).
+2. Wire the package into `~/configs/flake.nix` and the Hetzner host configuration.
+3. Configure Caddy to reverse proxy the Bun server.
 
-10. **Create `~/configs/hetzner/forge.nix`:**
-```nix
-{ config, lib, pkgs, ... }:
-
-let
-  cfg = config.services.forge;
-in
-{
-  options.services.forge = {
-    enable = lib.mkEnableOption "Forge Git Server";
-    package = lib.mkOption {
-      type = lib.types.package;
-    };
-  };
-
-  config = lib.mkIf cfg.enable {
-    users.users.forge = {
-      isSystemUser = true;
-      group = "forge";
-      home = "/var/lib/forge";
-      createHome = true;
-      openssh.authorizedKeys.keys = [
-        "ssh-ed25519 AAAAC3Nza... your-key-here"
-      ];
-    };
-    
-    users.groups.forge = {};
-
-    systemd.tmpfiles.rules = [
-      "d /var/lib/forge/repos 0755 forge forge -"
-      "d /var/lib/forge/work 0755 forge forge -"
-      "d /var/lib/forge/logs 0755 forge forge -"
-    ];
-
-    systemd.services.forge = {
-      description = "Forge Git Server";
-      after = [ "network.target" ];
-      wantedBy = [ "multi-user.target" ];
-      
-      serviceConfig = {
-        Type = "simple";
-        User = "forge";
-        WorkingDirectory = "/var/lib/forge";
-        ExecStart = "${cfg.package}/bin/forge";
-        Restart = "always";
-        Environment = [
-          "FORGE_DATA_DIR=/var/lib/forge"
-          "PORT=3030"
-        ];
-      };
-    };
-  };
-}
-```
-
-11. **Add to `~/configs/flake.nix`:**
-```nix
-inputs.forge = {
-  url = "path:/Users/justin/code/forge";
-  inputs.nixpkgs.follows = "nixpkgs";
-};
-
-# In nixosConfigurations.hetzner:
-{
-  services.forge = {
-    enable = true;
-    package = inputs.forge.packages.x86_64-linux.default;
-  };
-}
-```
-
-12. **Add to `~/configs/hetzner/caddy.nix`:**
-```nix
-"forge.justinmoon.com" = {
-  extraConfig = ''
-    reverse_proxy localhost:3030
-  '';
-};
-```
-
-### Phase 7: Deploy & Test (Day 4)
-
-13. **Deploy:**
-```bash
-cd ~/configs
-git add flake.nix hetzner/forge.nix hetzner/caddy.nix
-git commit -m "Add forge service"
-just hetzner
-```
-
-14. **Create first repo:**
-```bash
-ssh forge@135.181.179.143
-cd /var/lib/forge/repos
-git init --bare yeet.git
-# Forge will install hook on first startup
-```
-
-15. **Test from local:**
-```bash
-cd ~/code/yeet
-git remote add forge forge@135.181.179.143:repos/yeet.git
-git push forge feature-branch
-# Should appear at https://forge.justinmoon.com
-```
+### Phase 8: Deploy & Smoke Test (Day 4)
+1. Deploy via `just hetzner`.
+2. Initialize a bare repo under `/var/lib/forge/repos/`. The forge service installs the hook on startup if missing.
+3. Push a feature branch, confirm the MR appears, CI runs, and the merge button updates state correctly.
 
 ---
 
 ## Summary
+- Forge v1 keeps persistence minimal: Git refs and filesystem logs drive all behavior.
+- No cleanup jobs or cache invalidation paths exist because nothing is cached.
+- CI remains serialized and synchronous; future work can introduce a queue (likely SQLite) if parallelism or history retention becomes necessary.
 
-**This plan combines:**
-- ✅ Proper Git plumbing (merge-tree, server-side merge)
-- ✅ NixOS-native deployment (`just hetzner`)
-- ✅ Bun/TypeScript stack
-- ✅ Datastar SSR
-- ✅ No "main" branches - master only
-- ✅ Clean service data layout
+---
 
 ## Post-receive Hook Template
-
-For reference, the hook that will be installed in each bare repo:
-
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 zero=0000000000000000000000000000000000000000
 
 while read -r oldrev newrev refname; do
-  # ignore deletions
-  [ "$newrev" = "$zero" ] && continue
-  
+  # ignore deletions and non-branch refs
+  if [ "$newrev" = "$zero" ]; then
+    curl -sS -X POST http://localhost:3030/hooks/post-receive \
+      -H 'Content-Type: application/json' \
+      -d "{\"repo\":\"$PWD\",\"ref\":\"$refname\",\"deleted\":true}" || true
+    continue
+  fi
+
   case "$refname" in
+    refs/heads/master)
+      ;; # nothing to do for mainline updates
     refs/heads/*)
-      # Notify forge
-      curl -X POST http://localhost:3030/hooks/post-receive \
+      curl -sS -X POST http://localhost:3030/hooks/post-receive \
         -H 'Content-Type: application/json' \
-        -d "{\"repo\":\"$PWD\",\"ref\":\"$refname\",\"oldrev\":\"$oldrev\",\"newrev\":\"$newrev\"}"
+        -d "{\"repo\":\"$PWD\",\"ref\":\"$refname\",\"oldrev\":\"$oldrev\",\"newrev\":\"$newrev\"}" || true
       ;;
   esac
 done
