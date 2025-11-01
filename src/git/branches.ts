@@ -6,6 +6,7 @@ export function listBranches(repoPath: string): string[] {
   });
 
   if (!result.success) {
+    console.error(`Failed to list branches in ${repoPath}:`, result.stderr, `(exit ${result.exitCode})`);
     return [];
   }
 
