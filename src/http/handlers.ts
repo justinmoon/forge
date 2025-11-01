@@ -8,7 +8,8 @@ import { getCIStatus } from '../ci/status';
 import { renderRepoList } from '../views/repos';
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
 import { executeMerge } from '../git/merge-execute';
-import { insertMergeHistory } from '../db';
+import { insertMergeHistory, insertCIJob, cancelPendingJobs } from '../db';
+import { join } from 'path';
 
 export function createHandlers(config: ForgeConfig) {
   return {
@@ -171,11 +172,57 @@ export function createHandlers(config: ForgeConfig) {
 
     postReceive: async (req: Request, params: Record<string, string>) => {
       try {
-        const body = await req.json();
-        console.log('Post-receive hook:', body);
-        return jsonResponse({ status: 'ok', message: 'Placeholder: Hook received' });
+        const payload = await req.json() as any;
+        const { repo, ref, oldrev, newrev, deleted } = payload;
+
+        console.log('Post-receive hook:', { repo, ref, oldrev, newrev, deleted });
+
+        if (!repo || !ref) {
+          return jsonError(400, 'Missing required fields: repo, ref');
+        }
+
+        const branch = ref.replace('refs/heads/', '');
+        
+        if (branch === 'master') {
+          return jsonResponse({ status: 'ok', message: 'Master branch updated, no action' });
+        }
+
+        if (deleted) {
+          cancelPendingJobs(repo, branch);
+          return jsonResponse({ status: 'ok', message: 'Branch deleted, jobs canceled' });
+        }
+
+        const repoPath = getRepoPath(config.reposPath, repo);
+        const headCommit = getHeadCommit(repoPath, branch);
+        
+        if (!headCommit) {
+          return jsonResponse({ status: 'ok', message: 'Branch not found' });
+        }
+
+        cancelPendingJobs(repo, branch);
+
+        const logPath = join(config.logsPath, repo, `${headCommit}.log`);
+        
+        const jobId = insertCIJob({
+          repo,
+          branch,
+          headCommit,
+          status: 'pending',
+          logPath,
+          startedAt: new Date(),
+        });
+
+        const autoMerge = hasAutoMergeTrailer(repoPath, headCommit);
+
+        return jsonResponse({
+          status: 'ok',
+          message: 'CI job created',
+          jobId,
+          autoMerge,
+        });
       } catch (error) {
-        return jsonResponse({ error: 'Invalid JSON' }, 400);
+        console.error('Post-receive error:', error);
+        return jsonError(400, 'Invalid request: ' + String(error));
       }
     },
   };
