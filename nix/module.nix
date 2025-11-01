@@ -86,6 +86,7 @@ in
         FORGE_PORT = toString cfg.port;
         FORGE_MERGE_PASSWORD = cfg.mergePassword;
         NODE_ENV = "production";
+        HOME = cfg.dataDir;
       };
 
       serviceConfig = {
