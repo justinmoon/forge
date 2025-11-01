@@ -358,7 +358,18 @@ export function createHandlers(config: ForgeConfig) {
         const branch = ref.replace('refs/heads/', '');
         
         if (branch === 'master') {
-          return jsonResponse({ status: 'ok', message: 'Master branch updated, no action' });
+          // Trigger post-merge job for master branch updates
+          const repoPath = getRepoPath(config.reposPath, repo);
+          const headCommit = getHeadCommit(repoPath, 'master');
+          
+          if (headCommit) {
+            runPostMergeJob(config, repo, headCommit).catch((err) => {
+              console.error(`Failed to start post-merge job for ${repo}@${headCommit}:`, err);
+            });
+            return jsonResponse({ status: 'ok', message: 'Master branch updated, post-merge triggered' });
+          }
+          
+          return jsonResponse({ status: 'ok', message: 'Master branch updated, no commit found' });
         }
 
         if (deleted) {
