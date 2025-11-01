@@ -12,6 +12,10 @@ check:
 test:
     bun test
 
+# Run e2e UI tests with Playwright
+e2e:
+    bunx playwright test
+
 # Run a specific test file
 test-file file:
     bun test {{file}}
