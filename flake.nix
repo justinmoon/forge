@@ -59,6 +59,15 @@
             type = "app";
             program = "${forge}/bin/forge";
           };
+          pre-merge = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "pre-merge-check" ''
+              set -e
+              echo "Running pre-merge checks..."
+              ${pkgs.nix}/bin/nix flake check
+              echo "Pre-merge checks passed!"
+            '');
+          };
           post-merge = {
             type = "app";
             program = toString (pkgs.writeShellScript "post-merge-deploy" ''
