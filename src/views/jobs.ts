@@ -1,5 +1,6 @@
 import { layout, escapeHtml } from './layout';
 import type { CIJob } from '../types';
+import AnsiToHtml from 'ansi-to-html';
 
 export function renderJobsDashboard(
   jobs: CIJob[],
@@ -115,18 +116,20 @@ export function renderJobDetail(
       </div>
     `;
   } else if (logContent) {
+    // Convert ANSI codes to HTML server-side
+    const convert = new AnsiToHtml({
+      fg: '#d4d4d4',
+      bg: '#1e1e1e',
+      newline: true,
+      escapeXML: true,
+    });
+    const logHtml = convert.toHtml(logContent);
+    
     logSection = `
       <h3>Build Log</h3>
       <div class="log-container">
-        <pre id="log-output"></pre>
+        <pre>${logHtml}</pre>
       </div>
-      <script src="https://cdn.jsdelivr.net/npm/ansi_up@6.0.2/ansi_up.min.js"></script>
-      <script>
-        const ansi_up = new AnsiUp();
-        const logText = ${JSON.stringify(logContent)};
-        const html = ansi_up.ansi_to_html(logText);
-        document.getElementById('log-output').innerHTML = html;
-      </script>
     `;
   } else {
     logSection = '<p>No log content available.</p>';

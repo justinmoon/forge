@@ -5,7 +5,9 @@
   "bin": {
     "forge": "./src/cli/index.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "ansi-to-html": "^0.7.2"
+  },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
     "@types/bun": "latest",
