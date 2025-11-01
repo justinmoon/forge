@@ -22,6 +22,7 @@ export function startServer(config: ForgeConfig): Server {
   router.get('/r/:repo/history', handlers.getHistory);
   router.get('/jobs', handlers.getJobs);
   router.post('/r/:repo/mr/:branch/merge', handlers.postMerge);
+  router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
   router.post('/hooks/post-receive', handlers.postReceive);
 
   const server = Bun.serve({

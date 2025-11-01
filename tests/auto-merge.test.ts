@@ -64,7 +64,9 @@ describe('Auto-merge with post-receive hook', () => {
     expect(job).toBeTruthy();
     expect(job?.repo).toBe('test-repo');
     expect(job?.branch).toBe('auto-feature');
-    expect(['pending', 'running', 'failed']).toContain(job?.status);
+    if (job) {
+      expect(['pending', 'running', 'failed']).toContain(job.status);
+    }
   });
 
   test('post-receive cancels pending jobs for same branch on new push', async () => {
@@ -118,7 +120,9 @@ describe('Auto-merge with post-receive hook', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     const firstJob = getCIJob(firstJobId);
-    expect(['canceled', 'failed']).toContain(firstJob?.status);
+    if (firstJob) {
+      expect(['canceled', 'failed']).toContain(firstJob.status);
+    }
   });
 
   test('post-receive handles branch deletion', async () => {

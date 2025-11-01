@@ -7,9 +7,10 @@ import { hasAutoMergeTrailer } from '../git/trailers';
 import { getCIStatus } from '../ci/status';
 import { renderRepoList } from '../views/repos';
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
+import { renderJobsDashboard, renderJobsScript } from '../views/jobs';
 import { executeMerge } from '../git/merge-execute';
-import { insertMergeHistory, insertCIJob, cancelPendingJobs } from '../db';
-import { runCIJob } from '../ci/runner';
+import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs } from '../db';
+import { runCIJob, getCPUUsage, cancelJob } from '../ci/runner';
 import { join } from 'path';
 
 export function createHandlers(config: ForgeConfig) {
@@ -102,16 +103,47 @@ export function createHandlers(config: ForgeConfig) {
     },
 
     getJobs: async (req: Request, params: Record<string, string>) => {
-      return htmlResponse(`
-        <!DOCTYPE html>
-        <html>
-          <head><title>CI Jobs - forge</title></head>
-          <body>
-            <h1>CI Jobs</h1>
-            <p>Placeholder: Running and historical jobs</p>
-          </body>
-        </html>
-      `);
+      const jobs = listCIJobs(100);
+      
+      const cpuUsages = new Map<number, number | null>();
+      for (const job of jobs) {
+        if (job.status === 'running') {
+          cpuUsages.set(job.id, getCPUUsage(job.id));
+        }
+      }
+
+      const html = renderJobsDashboard(jobs, cpuUsages);
+      const withScript = html.replace('</body>', renderJobsScript() + '</body>');
+      
+      return htmlResponse(withScript);
+    },
+
+    postCancelJob: async (req: Request, params: Record<string, string>) => {
+      const jobId = parseInt(params.jobId, 10);
+      const password = req.headers.get('X-Forge-Password');
+
+      if (!password) {
+        return jsonError(401, 'Password required');
+      }
+
+      if (password !== config.mergePassword) {
+        return jsonError(401, 'Invalid password');
+      }
+
+      if (isNaN(jobId)) {
+        return jsonError(400, 'Invalid job ID');
+      }
+
+      const success = cancelJob(jobId);
+
+      if (!success) {
+        return jsonError(404, 'Job not found or not running');
+      }
+
+      return jsonResponse({
+        success: true,
+        message: 'Job canceled',
+      });
     },
 
     postMerge: async (req: Request, params: Record<string, string>) => {
