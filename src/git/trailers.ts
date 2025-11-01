@@ -43,5 +43,6 @@ export function getCommitTrailers(
 
 export function hasAutoMergeTrailer(repoPath: string, commit: string): boolean {
   const trailers = getCommitTrailers(repoPath, commit);
-  return trailers['Forge-Auto-Merge'] === 'true';
+  // Check both variants for compatibility
+  return trailers['Auto-Merge'] === 'yes' || trailers['Forge-Auto-Merge'] === 'true';
 }
