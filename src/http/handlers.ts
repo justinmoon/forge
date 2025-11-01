@@ -1,4 +1,4 @@
-import { htmlResponse, jsonResponse } from './router';
+import { htmlResponse, jsonResponse, jsonError } from './router';
 import type { ForgeConfig, MergeRequest } from '../types';
 import { listRepos, getRepoPath } from '../utils/repos';
 import { listFeatureBranches, getHeadCommit } from '../git/branches';
@@ -7,6 +7,8 @@ import { hasAutoMergeTrailer } from '../git/trailers';
 import { getCIStatus } from '../ci/status';
 import { renderRepoList } from '../views/repos';
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
+import { executeMerge } from '../git/merge-execute';
+import { insertMergeHistory } from '../db';
 
 export function createHandlers(config: ForgeConfig) {
   return {
@@ -108,6 +110,63 @@ export function createHandlers(config: ForgeConfig) {
           </body>
         </html>
       `);
+    },
+
+    postMerge: async (req: Request, params: Record<string, string>) => {
+      const { repo, branch } = params;
+      const password = req.headers.get('X-Forge-Password');
+
+      if (!password) {
+        return jsonError(401, 'Password required');
+      }
+
+      if (password !== config.mergePassword) {
+        return jsonError(401, 'Invalid password');
+      }
+
+      const repoPath = getRepoPath(config.reposPath, repo);
+      
+      const metadata = getMergeMetadata(repoPath, branch);
+      if (!metadata) {
+        return jsonError(404, 'Branch not found');
+      }
+
+      const ciStatus = getCIStatus(
+        config.logsPath,
+        repo,
+        branch,
+        metadata.headCommit
+      );
+
+      if (ciStatus !== 'passed') {
+        return jsonError(400, 'CI must pass before merging');
+      }
+
+      if (metadata.hasConflicts) {
+        return jsonError(400, 'Branch has conflicts with master');
+      }
+
+      const result = executeMerge(repoPath, branch);
+
+      if (!result.success) {
+        return jsonError(500, result.error || 'Merge failed');
+      }
+
+      insertMergeHistory({
+        repo,
+        branch,
+        headCommit: metadata.headCommit,
+        mergeCommit: result.mergeCommit!,
+        mergedAt: new Date(),
+        ciStatus,
+        ciLogPath: null,
+      });
+
+      return jsonResponse({
+        success: true,
+        mergeCommit: result.mergeCommit,
+        message: 'Merge successful',
+      });
     },
 
     postReceive: async (req: Request, params: Record<string, string>) => {
