@@ -28,6 +28,7 @@ export function startServer(config: ForgeConfig): Server {
   router.get('/jobs', handlers.getJobs);
   router.get('/jobs/:jobId', handlers.getJobDetail);
   router.post('/r/:repo/mr/:branch/merge', handlers.postMerge);
+  router.post('/r/:repo/mr/:branch/delete', handlers.postDeleteBranch);
   router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
   router.post('/hooks/post-receive', handlers.postReceive);
 

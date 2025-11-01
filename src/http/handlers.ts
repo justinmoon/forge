@@ -344,6 +344,40 @@ export function createHandlers(config: ForgeConfig) {
       });
     },
 
+    postDeleteBranch: async (req: Request, params: Record<string, string>) => {
+      const { repo, branch } = params;
+      const password = req.headers.get('X-Forge-Password');
+
+      if (!password) {
+        return jsonError(401, 'Password required');
+      }
+
+      if (password !== config.mergePassword) {
+        return jsonError(401, 'Invalid password');
+      }
+
+      if (branch === 'master') {
+        return jsonError(400, 'Cannot delete master branch');
+      }
+
+      const repoPath = getRepoPath(config.reposPath, repo);
+      const { execGit } = await import('../git/exec');
+      
+      const deleteResult = execGit(['update-ref', '-d', `refs/heads/${branch}`], { cwd: repoPath });
+
+      if (!deleteResult.success) {
+        return jsonError(500, deleteResult.stderr || 'Failed to delete branch');
+      }
+
+      // Cancel any pending CI jobs for this branch
+      cancelPendingJobs(repo, branch);
+
+      return jsonResponse({
+        success: true,
+        message: 'Branch deleted',
+      });
+    },
+
     postReceive: async (req: Request, params: Record<string, string>) => {
       try {
         const payload = await req.json() as any;
