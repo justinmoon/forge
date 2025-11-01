@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+export {};
+
 const command = process.argv[2];
 
 function printHelp() {
@@ -32,9 +34,8 @@ if (command === '--version' || command === '-v') {
 }
 
 if (!command) {
-  console.log('Server mode not yet implemented. Use --help for usage.');
-  process.exit(0);
+  await import('../index.js');
+} else {
+  console.log(`Command '${command}' not yet implemented. Use --help for usage.`);
+  process.exit(1);
 }
-
-console.log(`Command '${command}' not yet implemented. Use --help for usage.`);
-process.exit(1);
