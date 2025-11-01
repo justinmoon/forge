@@ -1,5 +1,9 @@
 # Development commands for forge
 
+# Show available commands
+default:
+    @just --list
+
 # Run type checking
 check:
     ./node_modules/.bin/tsc --noEmit
