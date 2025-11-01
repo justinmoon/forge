@@ -10,7 +10,7 @@ import { renderMRList, renderMRDetail } from '../views/merge-requests';
 import { renderJobsDashboard, renderJobsScript, renderJobDetail } from '../views/jobs';
 import { renderHistory } from '../views/history';
 import { executeMerge } from '../git/merge-execute';
-import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob } from '../db';
+import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob, getPreviewByBranch, deletePreview, registerPreview, getPreviewBySubdomain } from '../db';
 import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob } from '../ci/runner';
 import { join } from 'path';
 import { existsSync } from 'fs';
@@ -170,8 +170,10 @@ export function createHandlers(config: ForgeConfig) {
 
       const latestJob = getLatestCIJob(repo, branch, metadata.headCommit);
       const diff = getDiff(repoPath, metadata.mergeBase, metadata.headCommit);
+      const preview = getPreviewByBranch(repo, branch);
+      const previewUrl = preview ? `https://${preview.subdomain}.${config.domain || 'forge.example.com'}` : null;
 
-      return htmlResponse(renderMRDetail(repo, mr, diff, latestJob));
+      return htmlResponse(renderMRDetail(repo, mr, diff, latestJob, previewUrl));
     },
 
     getHistory: async (req: Request, params: Record<string, string>) => {
@@ -332,6 +334,9 @@ export function createHandlers(config: ForgeConfig) {
         ciLogPath: null,
       });
 
+      // Clean up preview (branch is merged)
+      deletePreview(repo, branch);
+
       // Trigger post-merge job (fire and forget)
       runPostMergeJob(config, repo, result.mergeCommit!).catch((err) => {
         console.error(`Failed to start post-merge job:`, err);
@@ -408,6 +413,7 @@ export function createHandlers(config: ForgeConfig) {
 
         if (deleted) {
           cancelPendingJobs(repo, branch);
+          deletePreview(repo, branch);
           return jsonResponse({ status: 'ok', message: 'Branch deleted, jobs canceled' });
         }
 
@@ -446,6 +452,92 @@ export function createHandlers(config: ForgeConfig) {
       } catch (error) {
         console.error('Post-receive error:', error);
         return jsonError(400, 'Invalid request: ' + String(error));
+      }
+    },
+
+    postRegisterPreview: async (req: Request, params: Record<string, string>) => {
+      try {
+        const payload = await req.json() as any;
+        const { repo, branch, port } = payload;
+
+        if (!repo || !branch || !port) {
+          return jsonError(400, 'Missing required fields: repo, branch, port');
+        }
+
+        if (typeof port !== 'number' || port < 1 || port > 65535) {
+          return jsonError(400, 'Invalid port number');
+        }
+
+        // Generate subdomain (deterministic hash)
+        const crypto = await import('crypto');
+        const hash = crypto.createHash('md5').update(`${repo}:${branch}`).digest('hex').substring(0, 8);
+        const subdomain = `preview-${hash}`;
+
+        // Register preview
+        registerPreview(subdomain, repo, branch, port);
+
+        const domain = config.domain || 'forge.example.com';
+        const url = `https://${subdomain}.${domain}`;
+
+        console.log(`Registered preview: ${url} → localhost:${port}`);
+
+        return jsonResponse({
+          success: true,
+          subdomain,
+          url,
+          port,
+        });
+      } catch (error) {
+        console.error('Register preview error:', error);
+        return jsonError(400, 'Invalid request: ' + String(error));
+      }
+    },
+
+    proxyPreview: async (req: Request, params: Record<string, string>) => {
+      try {
+        const url = new URL(req.url);
+        const host = url.hostname;
+
+        // Extract subdomain
+        const match = host.match(/^(preview-[a-f0-9]+)\./);
+        if (!match) {
+          return htmlResponse('<h1>Not Found</h1><p>Invalid preview subdomain</p>', 404);
+        }
+
+        const subdomain = match[1];
+        const preview = getPreviewBySubdomain(subdomain);
+
+        if (!preview) {
+          return htmlResponse(
+            `<h1>Preview Not Found</h1><p>Preview "${subdomain}" does not exist or has been deleted.</p>`,
+            404
+          );
+        }
+
+        // Proxy to the preview port
+        try {
+          const targetUrl = `http://localhost:${preview.port}${url.pathname}${url.search}`;
+          const proxyResponse = await fetch(targetUrl, {
+            method: req.method,
+            headers: req.headers,
+            body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
+          });
+
+          return new Response(proxyResponse.body, {
+            status: proxyResponse.status,
+            statusText: proxyResponse.statusText,
+            headers: proxyResponse.headers,
+          });
+        } catch (proxyError) {
+          console.error(`Failed to proxy to preview ${subdomain}:${preview.port}:`, proxyError);
+          return htmlResponse(
+            `<h1>Preview Unavailable</h1><p>Could not connect to preview at port ${preview.port}.</p>`,
+            502
+          );
+        }
+      } catch (error) {
+        console.error('Proxy preview error:', error);
+        return htmlResponse('<h1>Internal Server Error</h1>', 500);
       }
     },
   };

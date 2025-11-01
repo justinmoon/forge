@@ -31,6 +31,7 @@ export function startServer(config: ForgeConfig): Server {
   router.post('/r/:repo/mr/:branch/delete', handlers.postDeleteBranch);
   router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
   router.post('/hooks/post-receive', handlers.postReceive);
+  router.post('/register-preview', handlers.postRegisterPreview);
 
   const server = Bun.serve({
     port: config.port,
@@ -40,6 +41,17 @@ export function startServer(config: ForgeConfig): Server {
       
       console.log(`[${new Date().toISOString()}] ${req.method} ${url.pathname}`);
       
+      // Check if this is a preview subdomain request
+      const host = url.hostname;
+      if (host.match(/^preview-[a-f0-9]+\./)) {
+        // Handle preview proxy
+        const response = handlers.proxyPreview(req, {});
+        const duration = Date.now() - start;
+        console.log(`[${new Date().toISOString()}] PROXY ${host} - ${duration}ms`);
+        return response;
+      }
+      
+      // Normal routing
       const response = router.handle(req);
       
       const duration = Date.now() - start;

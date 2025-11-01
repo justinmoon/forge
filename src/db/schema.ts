@@ -37,4 +37,20 @@ export const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_ci_jobs_repo_branch ON ci_jobs(repo, branch, head_commit);
     `,
   },
+  {
+    version: 2,
+    name: 'preview_deployments',
+    up: `
+      CREATE TABLE IF NOT EXISTS preview_deployments (
+        subdomain TEXT PRIMARY KEY,
+        repo TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        created_at DATETIME NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_preview_repo_branch ON preview_deployments(repo, branch);
+      CREATE INDEX IF NOT EXISTS idx_preview_subdomain ON preview_deployments(subdomain);
+    `,
+  },
 ];

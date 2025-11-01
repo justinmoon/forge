@@ -81,7 +81,12 @@ export async function runPreMergeJob(
     // Run nix run .#pre-merge
     const ciProcess = spawn('nix', ['run', '.#pre-merge'], {
       cwd: worktreePath,
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        FORGE_REPO: repo,
+        FORGE_BRANCH: branch,
+        FORGE_COMMIT: headCommit,
+      },
     });
 
     runningJobs.set(jobId, {
