@@ -8,6 +8,8 @@ export interface MergeRequest {
   hasConflicts: boolean;
   ciStatus: CIStatus;
   autoMerge: boolean;
+  // New field for tracking merge request creation time
+  createdAt?: Date;
 }
 
 export type CIStatus = 'not-configured' | 'running' | 'passed' | 'failed' | 'unknown';
@@ -33,6 +35,8 @@ export interface CIJob {
   startedAt: Date;
   finishedAt: Date | null;
   exitCode: number | null;
+  // Track duration for analytics
+  duration?: number;
 }
 
 export interface PostReceivePayload {

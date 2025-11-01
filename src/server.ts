@@ -37,12 +37,12 @@ export function startServer(config: ForgeConfig): Server {
       const start = Date.now();
       const url = new URL(req.url);
       
-      console.log(`${req.method} ${url.pathname}`);
+      console.log(`[${new Date().toISOString()}] ${req.method} ${url.pathname}`);
       
       const response = router.handle(req);
       
       const duration = Date.now() - start;
-      console.log(`${req.method} ${url.pathname} - ${duration}ms`);
+      console.log(`[${new Date().toISOString()}] ${req.method} ${url.pathname} - ${duration}ms`);
       
       return response;
     },
