@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import { mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { execGit } from '../git/exec';
-import { updateCIJob, getCIJob } from '../db';
+import { updateCIJob, getCIJob, insertCIJob } from '../db';
 import { tryAutoMerge } from './auto-merge';
 import type { ForgeConfig } from '../types';
 
