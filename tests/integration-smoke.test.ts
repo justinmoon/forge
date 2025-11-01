@@ -43,27 +43,31 @@ describe('Integration smoke tests', () => {
     expect(json.error).toBeTruthy();
   });
 
-  test('GET / returns HTML repo list placeholder', async () => {
+  test('GET / returns HTML repo list with actual repos', async () => {
     const response = await fetch(`http://localhost:${server.port}/`);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
     
     const html = await response.text();
     expect(html).toContain('forge');
-    expect(html).toContain('Repository list');
+    expect(html).toContain('test-repo');
+    expect(html).toContain('/r/test-repo');
   });
 
-  test('GET /r/:repo returns HTML MR list placeholder', async () => {
+  test('GET /r/:repo returns HTML MR list with actual MRs', async () => {
     const response = await fetch(`http://localhost:${server.port}/r/test-repo`);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
     
     const html = await response.text();
     expect(html).toContain('test-repo');
-    expect(html).toContain('Merge request list');
+    expect(html).toContain('feature-1');
+    expect(html).toContain('Active Merge Requests');
+    expect(html).toContain('CI not configured');
+    expect(html).toContain('clean');
   });
 
-  test('GET /r/:repo/mr/:branch returns HTML MR detail placeholder', async () => {
+  test('GET /r/:repo/mr/:branch returns HTML MR detail with diff and CI status', async () => {
     const response = await fetch(`http://localhost:${server.port}/r/test-repo/mr/feature-1`);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
@@ -71,7 +75,12 @@ describe('Integration smoke tests', () => {
     const html = await response.text();
     expect(html).toContain('test-repo');
     expect(html).toContain('feature-1');
-    expect(html).toContain('MR detail');
+    expect(html).toContain('Head commit');
+    expect(html).toContain('Merge base');
+    expect(html).toContain('CI Status');
+    expect(html).toContain('CI not configured');
+    expect(html).toContain('Diff Preview');
+    expect(html).toContain('Feature 1 content');
   });
 
   test('GET /r/:repo/history returns HTML history placeholder', async () => {

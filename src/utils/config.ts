@@ -4,7 +4,7 @@ import { join } from 'path';
 
 export function getConfig(): ForgeConfig {
   const dataDir = process.env.FORGE_DATA_DIR || '/var/lib/forge';
-  const port = parseInt(process.env.FORGE_PORT || '3000', 10);
+  const port = parseInt(process.env.FORGE_PORT || '3030', 10);
   const mergePassword = process.env.FORGE_MERGE_PASSWORD || 'changeme';
 
   const reposPath = join(dataDir, 'repos');

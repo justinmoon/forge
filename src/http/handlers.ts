@@ -1,47 +1,86 @@
 import { htmlResponse, jsonResponse } from './router';
-import type { ForgeConfig } from '../types';
+import type { ForgeConfig, MergeRequest } from '../types';
+import { listRepos, getRepoPath } from '../utils/repos';
+import { listFeatureBranches, getHeadCommit } from '../git/branches';
+import { getMergeMetadata, getDiff } from '../git/merge';
+import { hasAutoMergeTrailer } from '../git/trailers';
+import { getCIStatus } from '../ci/status';
+import { renderRepoList } from '../views/repos';
+import { renderMRList, renderMRDetail } from '../views/merge-requests';
 
 export function createHandlers(config: ForgeConfig) {
   return {
     getRoot: async (req: Request, params: Record<string, string>) => {
-      return htmlResponse(`
-        <!DOCTYPE html>
-        <html>
-          <head><title>forge</title></head>
-          <body>
-            <h1>forge v0.1.0</h1>
-            <p>Placeholder: Repository list</p>
-          </body>
-        </html>
-      `);
+      const repos = listRepos(config.reposPath);
+      return htmlResponse(renderRepoList(repos));
     },
 
     getRepo: async (req: Request, params: Record<string, string>) => {
       const { repo } = params;
-      return htmlResponse(`
-        <!DOCTYPE html>
-        <html>
-          <head><title>${repo} - forge</title></head>
-          <body>
-            <h1>${repo}</h1>
-            <p>Placeholder: Merge request list</p>
-          </body>
-        </html>
-      `);
+      const repoPath = getRepoPath(config.reposPath, repo);
+      const branches = listFeatureBranches(repoPath);
+
+      const mrs: MergeRequest[] = [];
+      for (const branch of branches) {
+        const metadata = getMergeMetadata(repoPath, branch);
+        if (metadata) {
+          const ciStatus = getCIStatus(
+            config.logsPath,
+            repo,
+            branch,
+            metadata.headCommit
+          );
+          const autoMerge = hasAutoMergeTrailer(repoPath, metadata.headCommit);
+
+          mrs.push({
+            repo,
+            branch,
+            headCommit: metadata.headCommit,
+            mergeBase: metadata.mergeBase,
+            aheadCount: metadata.aheadCount,
+            behindCount: metadata.behindCount,
+            hasConflicts: metadata.hasConflicts,
+            ciStatus,
+            autoMerge,
+          });
+        }
+      }
+
+      return htmlResponse(renderMRList(repo, mrs));
     },
 
     getMergeRequest: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
-      return htmlResponse(`
-        <!DOCTYPE html>
-        <html>
-          <head><title>${repo} / ${branch} - forge</title></head>
-          <body>
-            <h1>${repo} / ${branch}</h1>
-            <p>Placeholder: MR detail, diff, CI status, merge button</p>
-          </body>
-        </html>
-      `);
+      const repoPath = getRepoPath(config.reposPath, repo);
+      
+      const metadata = getMergeMetadata(repoPath, branch);
+      if (!metadata) {
+        return htmlResponse('<h1>Branch not found</h1>', 404);
+      }
+
+      const ciStatus = getCIStatus(
+        config.logsPath,
+        repo,
+        branch,
+        metadata.headCommit
+      );
+      const autoMerge = hasAutoMergeTrailer(repoPath, metadata.headCommit);
+
+      const mr: MergeRequest = {
+        repo,
+        branch,
+        headCommit: metadata.headCommit,
+        mergeBase: metadata.mergeBase,
+        aheadCount: metadata.aheadCount,
+        behindCount: metadata.behindCount,
+        hasConflicts: metadata.hasConflicts,
+        ciStatus,
+        autoMerge,
+      };
+
+      const diff = getDiff(repoPath, metadata.mergeBase, metadata.headCommit);
+
+      return htmlResponse(renderMRDetail(repo, mr, diff));
     },
 
     getHistory: async (req: Request, params: Record<string, string>) => {
