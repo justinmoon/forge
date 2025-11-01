@@ -4,6 +4,7 @@ with lib;
 
 let
   cfg = config.services.forge;
+  gitPkg = pkgs.git;
 in
 {
   options.services.forge = {
@@ -96,6 +97,9 @@ in
         ExecStart = "${cfg.package}/bin/forge";
         Restart = "on-failure";
         RestartSec = "10s";
+        
+        # Ensure git is available
+        Path = [ gitPkg ];
 
         # Hardening
         PrivateTmp = true;
