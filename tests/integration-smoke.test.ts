@@ -79,7 +79,7 @@ describe('Integration smoke tests', () => {
     expect(html).toContain('Merge base');
     expect(html).toContain('CI Status');
     expect(html).toContain('CI not configured');
-    expect(html).toContain('Diff Preview');
+    expect(html).toContain('Changes');
     expect(html).toContain('Feature 1 content');
   });
 
