@@ -61,5 +61,9 @@
           };
         };
       }
-    );
+    ) // {
+      # NixOS module for deployment
+      nixosModules.forge = import ./nix/module.nix;
+      nixosModules.default = self.nixosModules.forge;
+    };
 }
