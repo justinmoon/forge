@@ -4,6 +4,7 @@ import { branchExists } from '../git/branches';
 import { getMergeMetadata } from '../git/merge';
 import { executeMerge } from '../git/merge-execute';
 import { insertMergeHistory } from '../db';
+import { runPostMergeJob } from './runner';
 import type { ForgeConfig } from '../types';
 
 export function tryAutoMerge(
@@ -55,6 +56,11 @@ export function tryAutoMerge(
   });
 
   console.log(`Auto-merge successful: ${result.mergeCommit}`);
+
+  // Trigger post-merge job (fire and forget)
+  runPostMergeJob(config, repo, result.mergeCommit!).catch((err) => {
+    console.error(`Failed to start post-merge job after auto-merge:`, err);
+  });
 
   return { attempted: true, success: true };
 }
