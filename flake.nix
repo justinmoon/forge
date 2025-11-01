@@ -59,6 +59,13 @@
             type = "app";
             program = "${forge}/bin/forge";
           };
+          post-merge = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "post-merge-deploy" ''
+              export PATH="${pkgs.lib.makeBinPath [ pkgs.git pkgs.nix pkgs.coreutils pkgs.bash ]}"
+              exec ${pkgs.bash}/bin/bash ${./scripts/post-merge-deploy.sh} "$@"
+            '');
+          };
         };
       }
     ) // {
