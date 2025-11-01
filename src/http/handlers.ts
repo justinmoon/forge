@@ -9,6 +9,7 @@ import { renderRepoList } from '../views/repos';
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
 import { executeMerge } from '../git/merge-execute';
 import { insertMergeHistory, insertCIJob, cancelPendingJobs } from '../db';
+import { runCIJob } from '../ci/runner';
 import { join } from 'path';
 
 export function createHandlers(config: ForgeConfig) {
@@ -213,6 +214,10 @@ export function createHandlers(config: ForgeConfig) {
         });
 
         const autoMerge = hasAutoMergeTrailer(repoPath, headCommit);
+
+        runCIJob(config, jobId, repo, branch, headCommit).catch((err) => {
+          console.error(`Failed to run CI job ${jobId}:`, err);
+        });
 
         return jsonResponse({
           status: 'ok',
