@@ -145,6 +145,8 @@ export async function runPreMergeJob(
         } else {
           console.log(`Auto-merge failed for ${repo}/${branch}: ${autoMergeResult.error}`);
         }
+      } else {
+        console.log(`Auto-merge not attempted for ${repo}/${branch}: ${autoMergeResult.error}`);
       }
     }
   } catch (error) {
