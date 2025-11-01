@@ -1,5 +1,8 @@
 import { layout, escapeHtml } from './layout';
 import type { MergeRequest, CIJob } from '../types';
+import { parseDiff } from '../git/diff-parser';
+import { renderDiff } from './diff';
+import { renderDiffScripts } from './diff-scripts';
 
 export function renderMRList(repo: string, mrs: MergeRequest[]): string {
   if (mrs.length === 0) {
@@ -100,10 +103,8 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
 
   const diffPreview = diff
     ? `
-    <h3>Diff Preview</h3>
-    <div class="diff-container">
-      <pre>${escapeHtml(diff.slice(0, 10000))}${diff.length > 10000 ? '\n\n... (truncated)' : ''}</pre>
-    </div>
+    <h3>Changes</h3>
+    ${renderDiff(parseDiff(diff))}
   `
     : '<p>No changes to display.</p>';
 
@@ -130,6 +131,8 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
     </div>
 
     ${diffPreview}
+
+    ${renderDiffScripts()}
 
     <script>
       function handleMerge() {

@@ -118,6 +118,225 @@ export function layout(title: string, body: string): string {
       margin: 0;
       line-height: 1.5;
     }
+    
+    /* Diff Viewer Styles */
+    .diff-viewer { margin: 20px 0; }
+    .diff-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      background: #f6f8fa;
+      border: 1px solid #d1d9e0;
+      border-radius: 5px 5px 0 0;
+    }
+    .diff-summary { font-size: 0.9em; color: #586069; }
+    .diff-view-toggle {
+      display: flex;
+      gap: 5px;
+    }
+    .diff-toggle-btn {
+      padding: 5px 12px;
+      border: 1px solid #d1d9e0;
+      background: white;
+      cursor: pointer;
+      font-size: 0.85em;
+      border-radius: 3px;
+    }
+    .diff-toggle-btn:hover { background: #f3f4f6; }
+    .diff-toggle-btn.active {
+      background: #0366d6;
+      color: white;
+      border-color: #0366d6;
+    }
+    .diff-stat-add { color: #22863a; font-weight: 500; }
+    .diff-stat-del { color: #cb2431; font-weight: 500; }
+    .diff-file-list {
+      border: 1px solid #d1d9e0;
+      border-top: none;
+      background: white;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .diff-file-list-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 15px;
+      border-bottom: 1px solid #e1e4e8;
+      font-size: 0.9em;
+    }
+    .diff-file-list-item:hover { background: #f6f8fa; }
+    .diff-file-icon {
+      margin-right: 8px;
+      font-size: 0.9em;
+    }
+    .diff-file-name {
+      flex: 1;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.9em;
+    }
+    .diff-file-stats {
+      margin-left: 10px;
+      font-size: 0.85em;
+    }
+    .diff-files { margin-top: 20px; }
+    .diff-file {
+      margin-bottom: 20px;
+      border: 1px solid #d1d9e0;
+      border-radius: 5px;
+      background: white;
+    }
+    .diff-file-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      background: #f6f8fa;
+      border-bottom: 1px solid #d1d9e0;
+    }
+    .diff-file-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+    .diff-file-header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .diff-collapse-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.2em;
+      padding: 0;
+      width: 20px;
+      color: #586069;
+    }
+    .diff-collapse-btn:hover { color: #0366d6; }
+    .diff-file-path {
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-weight: 600;
+      font-size: 0.95em;
+    }
+    .diff-file-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.75em;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .diff-file-added { background: #d4edda; color: #155724; }
+    .diff-file-deleted { background: #f8d7da; color: #721c24; }
+    .diff-file-renamed { background: #fff3cd; color: #856404; }
+    .diff-file-binary { background: #e7e7e7; color: #586069; }
+    .diff-file-stats-text { font-size: 0.85em; }
+    .diff-stats-bar {
+      font-family: monospace;
+      font-size: 0.85em;
+      white-space: nowrap;
+    }
+    .diff-stats-bar-add { color: #22863a; }
+    .diff-stats-bar-del { color: #cb2431; }
+    .diff-binary-notice, .diff-empty-notice {
+      padding: 20px;
+      text-align: center;
+      color: #586069;
+      font-style: italic;
+    }
+    .diff-content { }
+    .diff-hunk { border-bottom: 1px solid #e1e4e8; }
+    .diff-hunk:last-child { border-bottom: none; }
+    .diff-hunk-header {
+      padding: 5px 10px;
+      background: #f1f8ff;
+      color: #586069;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.85em;
+      border-bottom: 1px solid #c8e1ff;
+    }
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.85em;
+    }
+    .diff-table tbody tr:hover { background: #f6f8fa; }
+    .diff-line-num {
+      width: 1%;
+      min-width: 40px;
+      padding: 0 10px;
+      text-align: right;
+      color: #586069;
+      user-select: none;
+      vertical-align: top;
+      border-right: 1px solid #e1e4e8;
+    }
+    .diff-line-num-old { background: #fafbfc; }
+    .diff-line-num-new { background: #fafbfc; }
+    .diff-line-content {
+      padding: 0 10px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      vertical-align: top;
+    }
+    .diff-line-prefix {
+      user-select: none;
+      margin-right: 5px;
+    }
+    .diff-line-add {
+      background: #e6ffed;
+    }
+    .diff-line-add .diff-line-num { background: #cdffd8; }
+    .diff-line-add .diff-line-content { background: #e6ffed; }
+    .diff-line-delete {
+      background: #ffeef0;
+    }
+    .diff-line-delete .diff-line-num { background: #ffdce0; }
+    .diff-line-delete .diff-line-content { background: #ffeef0; }
+    .diff-line-context { background: white; }
+    
+    /* Split view styles */
+    .diff-table-split {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.85em;
+      table-layout: fixed;
+    }
+    .diff-table-split tbody tr:hover { background: #f6f8fa; }
+    .diff-table-split .diff-line-num {
+      width: 40px;
+      padding: 0 10px;
+      text-align: right;
+      color: #586069;
+      user-select: none;
+      vertical-align: top;
+      background: #fafbfc;
+      border-right: 1px solid #e1e4e8;
+    }
+    .diff-table-split .diff-line-content-split {
+      width: 50%;
+      padding: 0 10px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      vertical-align: top;
+    }
+    .diff-table-split .diff-line-delete {
+      background: #ffeef0;
+    }
+    .diff-table-split .diff-line-add {
+      background: #e6ffed;
+    }
+    .diff-table-split .diff-line-empty {
+      background: #f6f8fa;
+    }
+    
+    .diff-file.collapsed .diff-content {
+      display: none;
+    }
   </style>
 </head>
 <body>
