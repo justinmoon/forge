@@ -118,7 +118,7 @@ export function layout(title: string, body: string): string {
       margin: 0;
       line-height: 1.5;
     }
-    
+
     /* Diff Viewer Styles */
     .diff-viewer { margin: 20px 0; }
     .diff-toolbar {
@@ -297,7 +297,7 @@ export function layout(title: string, body: string): string {
     .diff-line-delete .diff-line-num { background: #ffdce0; }
     .diff-line-delete .diff-line-content { background: #ffeef0; }
     .diff-line-context { background: white; }
-    
+
     /* Split view styles */
     .diff-table-split {
       width: 100%;
@@ -333,7 +333,7 @@ export function layout(title: string, body: string): string {
     .diff-table-split .diff-line-empty {
       background: #f6f8fa;
     }
-    
+
     .diff-file.collapsed .diff-content {
       display: none;
     }
@@ -348,6 +348,7 @@ export function layout(title: string, body: string): string {
     </nav>
   </header>
   <main>
+    <div>hello world</div>
     ${body}
   </main>
 </body>
