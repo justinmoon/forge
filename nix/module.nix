@@ -100,7 +100,7 @@ in
         HOME = cfg.dataDir;
       };
 
-      path = [ gitPkg bashPkg coreutils ];
+      path = [ gitPkg bashPkg coreutils pkgs.nix ];
       
       serviceConfig = {
         Type = "simple";
