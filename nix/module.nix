@@ -66,6 +66,16 @@ in
       default = cfg.domain != null;
       description = "Whether to enable Caddy reverse proxy.";
     };
+
+    sshKeys = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      example = [ "ssh-ed25519 AAAAC3... user@host" ];
+      description = ''
+        SSH public keys allowed to push/pull from repositories.
+        These keys will be added to the forge user's authorized_keys.
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
@@ -75,6 +85,8 @@ in
       home = cfg.dataDir;
       createHome = true;
       description = "forge service user";
+      shell = "${pkgs.git}/bin/git-shell";
+      openssh.authorizedKeys.keys = mkIf (cfg.sshKeys != []) cfg.sshKeys;
     };
 
     users.groups.${cfg.group} = {};
