@@ -6,3 +6,10 @@
 
 Invariants
 - Keep a "how to use it" markdown file here that i can point other projects at
+
+Allowed markdown files
+
+plans/
+  plan.md
+  spec.md 
+AGENTS.md
