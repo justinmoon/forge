@@ -6,7 +6,10 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
     return layout(`${repo}`, `
       <h2><a href="/">&larr;</a> ${escapeHtml(repo)}</h2>
       <p>No active merge requests.</p>
-      <p><a href="/r/${escapeHtml(repo)}/history">View merge history</a></p>
+      <p>
+        <a href="/r/${escapeHtml(repo)}/history">View merge history</a> &nbsp;|&nbsp;
+        <a href="/r/${escapeHtml(repo)}/delete" style="color: #c62828;">Delete repository</a>
+      </p>
     `);
   }
 
@@ -40,7 +43,10 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
 
   return layout(`${repo}`, `
     <h2><a href="/">&larr;</a> ${escapeHtml(repo)}</h2>
-    <p><a href="/r/${escapeHtml(repo)}/history">View merge history</a></p>
+    <p>
+      <a href="/r/${escapeHtml(repo)}/history">View merge history</a> &nbsp;|&nbsp;
+      <a href="/r/${escapeHtml(repo)}/delete" style="color: #c62828;">Delete repository</a>
+    </p>
     <h3>Active Merge Requests</h3>
     <ul class="mr-list">
       ${mrItems}

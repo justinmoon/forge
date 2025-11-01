@@ -96,6 +96,7 @@ in
         FORGE_DATA_DIR = cfg.dataDir;
         FORGE_PORT = toString cfg.port;
         FORGE_MERGE_PASSWORD = cfg.mergePassword;
+        FORGE_DOMAIN = mkIf (cfg.domain != null) cfg.domain;
         NODE_ENV = "production";
         HOME = cfg.dataDir;
       };

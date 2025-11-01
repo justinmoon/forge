@@ -17,6 +17,7 @@ export function getConfig(): ForgeConfig {
   const logsPath = join(dataDir, 'logs');
   const dbPath = join(dataDir, 'forge.db');
   const workPath = join(dataDir, 'work');
+  const domain = process.env.FORGE_DOMAIN;
 
   return {
     dataDir,
@@ -26,6 +27,7 @@ export function getConfig(): ForgeConfig {
     logsPath,
     dbPath,
     workPath,
+    domain,
   };
 }
 

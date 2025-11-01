@@ -51,4 +51,5 @@ export interface ForgeConfig {
   logsPath: string;
   dbPath: string;
   workPath: string;
+  domain?: string;
 }

@@ -3,7 +3,7 @@ import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { createTestContext, createBareRepo, createWorkRepo, seedRepo, createFeatureBranch } from './helpers';
 import { insertCIJob, getCIJob, updateCIJob } from '../src/db';
-import { runCIJob, cancelJob, isJobRunning, getCPUUsage } from '../src/ci/runner';
+import { runPreMergeJob, cancelJob, isJobRunning, getCPUUsage } from '../src/ci/runner';
 import type { TestContext } from './helpers';
 
 describe('CI Runner', () => {
@@ -42,7 +42,7 @@ describe('CI Runner', () => {
       startedAt: new Date(),
     });
 
-    await runCIJob(ctx.config, jobId, 'test-repo', 'feature-1', headCommit);
+    await runPreMergeJob(ctx.config, jobId, 'test-repo', 'feature-1', headCommit);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -78,7 +78,7 @@ describe('CI Runner', () => {
       startedAt: new Date(),
     });
 
-    const runPromise = runCIJob(ctx.config, jobId, 'test-repo', 'feature-1', headCommit);
+    const runPromise = runPreMergeJob(ctx.config, jobId, 'test-repo', 'feature-1', headCommit);
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 

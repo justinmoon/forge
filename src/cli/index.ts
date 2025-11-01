@@ -3,7 +3,7 @@
 export {};
 
 import { getConfig } from '../utils/config';
-import { getRepoPath } from '../utils/repos';
+import { getRepoPath, createRepository, deleteRepository } from '../utils/repos';
 import { getMergeMetadata } from '../git/merge';
 import { getCIStatus } from '../ci/status';
 import { hasAutoMergeTrailer } from '../git/trailers';
@@ -19,6 +19,8 @@ Usage:
   forge [command] [options]
 
 Commands:
+  create <repo>              Create a new repository with post-receive hook
+  delete <repo>              Delete a repository (prompts for confirmation)
   status <repo> <branch>     Print MR fields, CI status, and merge eligibility
   wait-ci <repo> <branch>    Block until the latest CI run completes
   cancel-ci <job_id>         Cancel an active CI job (requires password)
@@ -43,6 +45,75 @@ if (command === '--version' || command === '-v') {
 
 if (!command) {
   await import('../index.js');
+} else if (command === 'create') {
+  const repoName = process.argv[3];
+
+  if (!repoName) {
+    console.error('Usage: forge create <repo-name>');
+    process.exit(1);
+  }
+
+  const config = getConfig();
+  const result = createRepository(config, repoName);
+
+  if (!result.success) {
+    console.error(`Error: ${result.error}`);
+    process.exit(1);
+  }
+
+  const cloneUrl = config.domain 
+    ? `forge@${config.domain}:${repoName}.git`
+    : `git@localhost:${repoName}.git`;
+
+  console.log(`✓ Created repository: ${repoName}`);
+  console.log(`✓ Installed post-receive hook`);
+  console.log(`\nClone with:`);
+  console.log(`  git clone ${cloneUrl}`);
+  console.log(`\nView at:`);
+  const webUrl = config.domain 
+    ? `https://${config.domain}/r/${repoName}`
+    : `http://localhost:${config.port}/r/${repoName}`;
+  console.log(`  ${webUrl}`);
+
+  process.exit(0);
+} else if (command === 'delete') {
+  const repoName = process.argv[3];
+
+  if (!repoName) {
+    console.error('Usage: forge delete <repo-name>');
+    process.exit(1);
+  }
+
+  console.log(`WARNING: This will permanently delete repository '${repoName}' and all its data.`);
+  console.log('Type the repository name to confirm:');
+  
+  process.stdout.write('> ');
+  
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  rl.question('', (answer: string) => {
+    rl.close();
+    
+    if (answer.trim() !== repoName) {
+      console.log('Deletion canceled.');
+      process.exit(0);
+    }
+
+    const config = getConfig();
+    const result = deleteRepository(config, repoName);
+
+    if (!result.success) {
+      console.error(`Error: ${result.error}`);
+      process.exit(1);
+    }
+
+    console.log(`✓ Deleted repository: ${repoName}`);
+    process.exit(0);
+  });
 } else if (command === 'status') {
   const repo = process.argv[3];
   const branch = process.argv[4];

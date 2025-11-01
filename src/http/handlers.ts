@@ -1,11 +1,11 @@
 import { htmlResponse, jsonResponse, jsonError } from './router';
 import type { ForgeConfig, MergeRequest } from '../types';
-import { listRepos, getRepoPath } from '../utils/repos';
+import { listRepos, getRepoPath, createRepository, deleteRepository } from '../utils/repos';
 import { listFeatureBranches, getHeadCommit } from '../git/branches';
 import { getMergeMetadata, getDiff } from '../git/merge';
 import { hasAutoMergeTrailer } from '../git/trailers';
 import { getCIStatus, readCILog } from '../ci/status';
-import { renderRepoList } from '../views/repos';
+import { renderRepoList, renderCreateRepoForm, renderRepoCreated, renderDeleteConfirmation } from '../views/repos';
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
 import { renderJobsDashboard, renderJobsScript } from '../views/jobs';
 import { renderHistory } from '../views/history';
@@ -20,6 +20,89 @@ export function createHandlers(config: ForgeConfig) {
     getRoot: async (req: Request, params: Record<string, string>) => {
       const repos = listRepos(config.reposPath);
       return htmlResponse(renderRepoList(repos));
+    },
+
+    getCreate: async (req: Request, params: Record<string, string>) => {
+      return htmlResponse(renderCreateRepoForm());
+    },
+
+    postCreate: async (req: Request, params: Record<string, string>) => {
+      try {
+        const formData = await req.formData();
+        const name = formData.get('name') as string;
+        const password = formData.get('password') as string;
+
+        if (!password || password !== config.mergePassword) {
+          return htmlResponse(renderCreateRepoForm('Invalid password'), 401);
+        }
+
+        const result = createRepository(config, name);
+
+        if (!result.success) {
+          return htmlResponse(renderCreateRepoForm(result.error), 400);
+        }
+
+        const cloneUrl = config.domain 
+          ? `forge@${config.domain}:${name}.git`
+          : `git@localhost:${name}.git`;
+        const webUrl = `/r/${name}`;
+
+        return htmlResponse(renderRepoCreated(name, cloneUrl, webUrl));
+      } catch (error) {
+        return htmlResponse(renderCreateRepoForm('Invalid request'), 400);
+      }
+    },
+
+    getDeleteConfirm: async (req: Request, params: Record<string, string>) => {
+      const { repo } = params;
+      const repoPath = getRepoPath(config.reposPath, repo);
+      const { existsSync } = await import('fs');
+      
+      if (!existsSync(repoPath)) {
+        return htmlResponse('<h1>Repository not found</h1>', 404);
+      }
+
+      return htmlResponse(renderDeleteConfirmation(repo));
+    },
+
+    postDelete: async (req: Request, params: Record<string, string>) => {
+      const { repo } = params;
+
+      try {
+        const formData = await req.formData();
+        const confirm = formData.get('confirm') as string;
+        const password = formData.get('password') as string;
+
+        if (!password || password !== config.mergePassword) {
+          return jsonError(401, 'Invalid password');
+        }
+
+        if (confirm !== repo) {
+          return jsonError(400, 'Repository name does not match');
+        }
+
+        const result = deleteRepository(config, repo);
+
+        if (!result.success) {
+          return jsonError(400, result.error!);
+        }
+
+        return htmlResponse(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Repository Deleted</title>
+              <meta http-equiv="refresh" content="2;url=/">
+            </head>
+            <body>
+              <h2>✓ Repository deleted</h2>
+              <p>Redirecting to home page...</p>
+            </body>
+          </html>
+        `);
+      } catch (error) {
+        return jsonError(400, 'Invalid request');
+      }
     },
 
     getRepo: async (req: Request, params: Record<string, string>) => {

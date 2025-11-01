@@ -17,7 +17,11 @@ export function startServer(config: ForgeConfig): Server {
   const handlers = createHandlers(config);
 
   router.get('/', handlers.getRoot);
+  router.get('/create', handlers.getCreate);
+  router.post('/create', handlers.postCreate);
   router.get('/r/:repo', handlers.getRepo);
+  router.get('/r/:repo/delete', handlers.getDeleteConfirm);
+  router.post('/r/:repo/delete', handlers.postDelete);
   router.get('/r/:repo/mr/:branch', handlers.getMergeRequest);
   router.get('/r/:repo/history', handlers.getHistory);
   router.get('/r/:repo/logs/:commit', handlers.getCILog);
