@@ -90,6 +90,8 @@ in
         HOME = cfg.dataDir;
       };
 
+      path = [ gitPkg ];
+      
       serviceConfig = {
         Type = "simple";
         User = cfg.user;
@@ -97,9 +99,6 @@ in
         ExecStart = "${cfg.package}/bin/forge";
         Restart = "on-failure";
         RestartSec = "10s";
-        
-        # Ensure git is available
-        Path = [ gitPkg ];
 
         # Hardening
         PrivateTmp = true;
