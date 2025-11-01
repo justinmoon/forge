@@ -128,6 +128,7 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
 
     <div style="margin: 20px 0;">
       ${mergeButton}
+      <button class="button" onclick="handleDeleteBranch()" style="background: #dc3545; margin-left: 10px;">Delete Branch</button>
     </div>
 
     ${diffPreview}
@@ -157,6 +158,35 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
         })
         .catch(err => {
           alert('Merge failed: ' + err.message);
+        });
+      }
+
+      function handleDeleteBranch() {
+        if (!confirm('Are you sure you want to delete this branch? This cannot be undone.')) {
+          return;
+        }
+
+        const password = prompt('Enter password to delete branch:');
+        if (!password) return;
+
+        fetch(window.location.pathname + '/delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Forge-Password': password
+          }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            alert('Delete failed: ' + data.error);
+          } else {
+            alert('Branch deleted successfully!');
+            window.location.href = '/r/${escapeHtml(repo)}';
+          }
+        })
+        .catch(err => {
+          alert('Delete failed: ' + err.message);
         });
       }
     </script>
