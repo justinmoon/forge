@@ -44,14 +44,14 @@ export function cancelJob(jobId: number): boolean {
   }
 }
 
-export async function runCIJob(
+export async function runPreMergeJob(
   config: ForgeConfig,
   jobId: number,
   repo: string,
   branch: string,
   headCommit: string
 ): Promise<void> {
-  console.log(`Starting CI job ${jobId} for ${repo}/${branch}@${headCommit}`);
+  console.log(`Starting pre-merge job ${jobId} for ${repo}/${branch}@${headCommit}`);
 
   const repoPath = join(config.reposPath, `${repo}.git`);
   const worktreePath = join(config.workPath, repo, String(jobId));
@@ -78,24 +78,11 @@ export async function runCIJob(
     
     const startTime = Date.now();
 
-    // Check for .forge/ci script first
-    const forgeCIPath = join(worktreePath, '.forge', 'ci');
-    const hasForgeCIScript = existsSync(forgeCIPath);
-    
-    let ciProcess;
-    if (hasForgeCIScript) {
-      // Run .forge/ci script
-      ciProcess = spawn(forgeCIPath, [], {
-        cwd: worktreePath,
-        env: { ...process.env },
-      });
-    } else {
-      // Fall back to nix run .#ci
-      ciProcess = spawn('nix', ['run', '.#ci'], {
-        cwd: worktreePath,
-        env: { ...process.env },
-      });
-    }
+    // Run nix run .#pre-merge
+    const ciProcess = spawn('nix', ['run', '.#pre-merge'], {
+      cwd: worktreePath,
+      env: { ...process.env },
+    });
 
     runningJobs.set(jobId, {
       jobId,
@@ -148,7 +135,7 @@ export async function runCIJob(
       console.error(`Failed to write status file:`, writeErr);
     }
 
-    console.log(`CI job ${jobId} completed with status: ${status} (exit ${exitCode})`);
+    console.log(`Pre-merge job ${jobId} completed with status: ${status} (exit ${exitCode})`);
 
     if (status === 'passed') {
       const autoMergeResult = tryAutoMerge(config, repo, branch, headCommit, status);
@@ -221,5 +208,117 @@ export function getCPUUsage(jobId: number): number | null {
     return isNaN(cpu) ? null : cpu;
   } catch (error) {
     return null;
+  }
+}
+
+export async function runPostMergeJob(
+  config: ForgeConfig,
+  repo: string,
+  mergeCommit: string
+): Promise<void> {
+  console.log(`Starting post-merge job for ${repo}@${mergeCommit}`);
+
+  const jobId = insertCIJob({
+    repo,
+    branch: 'master',
+    headCommit: mergeCommit,
+    status: 'pending',
+    logPath: join(config.logsPath, repo, `${mergeCommit}-post-merge.log`),
+    startedAt: new Date(),
+  });
+
+  const repoPath = join(config.reposPath, `${repo}.git`);
+  const worktreePath = join(config.workPath, repo, `post-merge-${jobId}`);
+  const logPath = join(config.logsPath, repo, `${mergeCommit}-post-merge.log`);
+
+  try {
+    mkdirSync(join(config.logsPath, repo), { recursive: true });
+    mkdirSync(worktreePath, { recursive: true });
+
+    const worktreeResult = execGit(
+      ['worktree', 'add', '--force', '--detach', worktreePath, mergeCommit],
+      { cwd: repoPath }
+    );
+
+    if (!worktreeResult.success) {
+      throw new Error(`Failed to create worktree: ${worktreeResult.stderr}`);
+    }
+
+    updateCIJob(jobId, { status: 'running' });
+
+    const logStream = require('fs').createWriteStream(logPath, { flags: 'w' });
+    const startTime = Date.now();
+
+    // Run nix run .#post-merge
+    const postMergeProcess = spawn('nix', ['run', '.#post-merge'], {
+      cwd: worktreePath,
+      env: { ...process.env },
+    });
+
+    runningJobs.set(jobId, {
+      jobId,
+      process: postMergeProcess,
+      startTime,
+    });
+
+    postMergeProcess.stdout?.on('data', (data) => {
+      logStream.write(data);
+    });
+
+    postMergeProcess.stderr?.on('data', (data) => {
+      logStream.write(data);
+    });
+
+    const exitCode = await new Promise<number>((resolve) => {
+      postMergeProcess.on('close', (code) => {
+        resolve(code ?? 1);
+      });
+      postMergeProcess.on('error', (err) => {
+        logStream.write(`\nProcess error: ${err.message}\n`);
+        resolve(1);
+      });
+    });
+
+    logStream.end();
+    runningJobs.delete(jobId);
+
+    const finishedAt = new Date();
+    const status = exitCode === 0 ? 'passed' : 'failed';
+
+    updateCIJob(jobId, {
+      status,
+      finishedAt,
+      exitCode,
+    });
+
+    const statusData = {
+      status,
+      exitCode,
+      startedAt: new Date(startTime).toISOString(),
+      finishedAt: finishedAt.toISOString(),
+    };
+
+    writeFileSync(
+      join(config.logsPath, repo, `${mergeCommit}-post-merge.status`),
+      JSON.stringify(statusData, null, 2)
+    );
+
+    console.log(`Post-merge job ${jobId} completed: ${status} (exit ${exitCode})`);
+
+  } catch (error) {
+    console.error(`Post-merge job ${jobId} failed:`, error);
+    updateCIJob(jobId, {
+      status: 'failed',
+      finishedAt: new Date(),
+      exitCode: 1,
+    });
+  } finally {
+    try {
+      execGit(['worktree', 'remove', '--force', worktreePath], {
+        cwd: repoPath,
+      });
+    } catch (err) {
+      console.error('Failed to remove worktree:', err);
+    }
   }
 }

@@ -1,0 +1,41 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - heading "forge" [level=1] [ref=e3]:
+      - link "forge" [ref=e4] [cursor=pointer]:
+        - /url: /
+    - navigation [ref=e5]:
+      - link "Repositories" [ref=e6] [cursor=pointer]:
+        - /url: /
+      - link "CI Jobs" [ref=e7] [cursor=pointer]:
+        - /url: /jobs
+  - main [ref=e8]:
+    - heading "← test-repo / History" [level=2] [ref=e9]:
+      - link "←" [ref=e10] [cursor=pointer]:
+        - /url: /r/test-repo
+      - text: test-repo / History
+    - heading "Merged Requests" [level=3] [ref=e11]
+    - list [ref=e12]:
+      - listitem [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]:
+            - heading "test-merge-2" [level=3] [ref=e16]
+            - generic [ref=e17]:
+              - text: "Merged at: 11/1/2025, 2:51:01 AM | Merge commit:"
+              - code [ref=e18]: "618000e4"
+              - text: "| Head:"
+              - code [ref=e19]: "30017219"
+          - generic [ref=e21]: CI passed
+      - listitem [ref=e22]:
+        - generic [ref=e23]:
+          - generic [ref=e24]:
+            - heading "feature-branch" [level=3] [ref=e25]
+            - generic [ref=e26]:
+              - text: "Merged at: 11/1/2025, 2:48:32 AM | Merge commit:"
+              - code [ref=e27]: 848b13ac
+              - text: "| Head:"
+              - code [ref=e28]: 7f2c7dba
+          - generic [ref=e30]: CI passed
+```

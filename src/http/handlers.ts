@@ -11,7 +11,7 @@ import { renderJobsDashboard, renderJobsScript } from '../views/jobs';
 import { renderHistory } from '../views/history';
 import { executeMerge } from '../git/merge-execute';
 import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory } from '../db';
-import { runCIJob, getCPUUsage, cancelJob } from '../ci/runner';
+import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob } from '../ci/runner';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -221,6 +221,11 @@ export function createHandlers(config: ForgeConfig) {
         ciLogPath: null,
       });
 
+      // Trigger post-merge job (fire and forget)
+      runPostMergeJob(config, repo, result.mergeCommit!).catch((err) => {
+        console.error(`Failed to start post-merge job:`, err);
+      });
+
       return jsonResponse({
         success: true,
         mergeCommit: result.mergeCommit,
@@ -272,8 +277,8 @@ export function createHandlers(config: ForgeConfig) {
 
         const autoMerge = hasAutoMergeTrailer(repoPath, headCommit);
 
-        runCIJob(config, jobId, repo, branch, headCommit).catch((err) => {
-          console.error(`Failed to run CI job ${jobId}:`, err);
+        runPreMergeJob(config, jobId, repo, branch, headCommit).catch((err) => {
+          console.error(`Failed to run pre-merge job ${jobId}:`, err);
         });
 
         return jsonResponse({
