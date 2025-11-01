@@ -5,6 +5,8 @@ with lib;
 let
   cfg = config.services.forge;
   gitPkg = pkgs.git;
+  bashPkg = pkgs.bash;
+  coreutils = pkgs.coreutils;
 in
 {
   options.services.forge = {
@@ -90,7 +92,7 @@ in
         HOME = cfg.dataDir;
       };
 
-      path = [ gitPkg ];
+      path = [ gitPkg bashPkg coreutils ];
       
       serviceConfig = {
         Type = "simple";
