@@ -67,6 +67,14 @@ export function createRepository(config: ForgeConfig, name: string): { success: 
 
     installPostReceiveHook(repoPath, config);
     
+    const symlinkPath = join(config.dataDir, `${name}.git`);
+    const relativeTarget = join('repos', `${name}.git`);
+    try {
+      execSync(`ln -s "${relativeTarget}" "${symlinkPath}"`, { stdio: 'pipe', cwd: config.dataDir });
+    } catch (symlinkError) {
+      console.warn(`Warning: Failed to create symlink for SSH access: ${symlinkError}`);
+    }
+    
     return { success: true };
   } catch (error) {
     return { success: false, error: `Failed to create repository: ${error}` };
@@ -86,6 +94,11 @@ export function deleteRepository(config: ForgeConfig, name: string): { success: 
     const logsDir = join(config.logsPath, name);
     if (existsSync(logsDir)) {
       rmSync(logsDir, { recursive: true, force: true });
+    }
+    
+    const symlinkPath = join(config.dataDir, `${name}.git`);
+    if (existsSync(symlinkPath)) {
+      rmSync(symlinkPath, { force: true });
     }
     
     return { success: true };
