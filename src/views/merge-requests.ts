@@ -1,5 +1,5 @@
 import { layout, escapeHtml } from './layout';
-import type { MergeRequest } from '../types';
+import type { MergeRequest, CIJob } from '../types';
 
 export function renderMRList(repo: string, mrs: MergeRequest[]): string {
   if (mrs.length === 0) {
@@ -54,7 +54,7 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
   `);
 }
 
-export function renderMRDetail(repo: string, mr: MergeRequest, diff: string): string {
+export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, latestJob: CIJob | null): string {
   const ciStatusBadge = renderCIStatusBadge(mr.ciStatus);
   const conflictsBadge = mr.hasConflicts
     ? '<span class="badge conflicts">conflicts</span>'
@@ -64,6 +64,10 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string): st
   const mergeButton = mergeDisabled
     ? `<button class="button" disabled>Merge (waiting for CI)</button>`
     : `<button class="button" onclick="handleMerge()">Merge to master</button>`;
+
+  const jobLink = latestJob
+    ? `<a href="/jobs/${latestJob.id}" style="margin-left: 15px;">View CI logs</a>`
+    : '';
 
   let ciAlert = '';
   if (mr.ciStatus === 'not-configured') {
@@ -116,6 +120,7 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string): st
       <strong>CI Status:</strong> ${ciStatusBadge} &nbsp;
       <strong>Conflicts:</strong> ${conflictsBadge}
       ${mr.autoMerge ? '<span class="badge">auto-merge enabled</span>' : ''}
+      ${jobLink}
     </div>
 
     ${ciAlert}

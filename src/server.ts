@@ -26,6 +26,7 @@ export function startServer(config: ForgeConfig): Server {
   router.get('/r/:repo/history', handlers.getHistory);
   router.get('/r/:repo/logs/:commit', handlers.getCILog);
   router.get('/jobs', handlers.getJobs);
+  router.get('/jobs/:jobId', handlers.getJobDetail);
   router.post('/r/:repo/mr/:branch/merge', handlers.postMerge);
   router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
   router.post('/hooks/post-receive', handlers.postReceive);

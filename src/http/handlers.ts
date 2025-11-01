@@ -7,10 +7,10 @@ import { hasAutoMergeTrailer } from '../git/trailers';
 import { getCIStatus, readCILog } from '../ci/status';
 import { renderRepoList, renderCreateRepoForm, renderRepoCreated, renderDeleteConfirmation } from '../views/repos';
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
-import { renderJobsDashboard, renderJobsScript } from '../views/jobs';
+import { renderJobsDashboard, renderJobsScript, renderJobDetail } from '../views/jobs';
 import { renderHistory } from '../views/history';
 import { executeMerge } from '../git/merge-execute';
-import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory } from '../db';
+import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob } from '../db';
 import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob } from '../ci/runner';
 import { join } from 'path';
 import { existsSync } from 'fs';
@@ -168,9 +168,10 @@ export function createHandlers(config: ForgeConfig) {
         autoMerge,
       };
 
+      const latestJob = getLatestCIJob(repo, branch, metadata.headCommit);
       const diff = getDiff(repoPath, metadata.mergeBase, metadata.headCommit);
 
-      return htmlResponse(renderMRDetail(repo, mr, diff));
+      return htmlResponse(renderMRDetail(repo, mr, diff, latestJob));
     },
 
     getHistory: async (req: Request, params: Record<string, string>) => {
@@ -224,6 +225,33 @@ export function createHandlers(config: ForgeConfig) {
       const withScript = html.replace('</body>', renderJobsScript() + '</body>');
       
       return htmlResponse(withScript);
+    },
+
+    getJobDetail: async (req: Request, params: Record<string, string>) => {
+      const jobId = parseInt(params.jobId, 10);
+      
+      if (isNaN(jobId)) {
+        return htmlResponse('<h1>Invalid job ID</h1>', 400);
+      }
+
+      const job = getCIJob(jobId);
+      
+      if (!job) {
+        return htmlResponse('<h1>Job not found</h1>', 404);
+      }
+
+      let logContent: string | null = null;
+      let logDeleted = false;
+
+      if (existsSync(job.logPath)) {
+        logContent = readCILog(job.logPath);
+      } else {
+        logDeleted = true;
+      }
+
+      const cpuUsage = job.status === 'running' ? getCPUUsage(job.id) : null;
+
+      return htmlResponse(renderJobDetail(job, logContent, logDeleted, cpuUsage));
     },
 
     postCancelJob: async (req: Request, params: Record<string, string>) => {

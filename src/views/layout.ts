@@ -99,6 +99,24 @@ export function layout(title: string, body: string): string {
       color: #055160;
     }
     .stats { margin: 10px 0; color: #666; font-size: 0.9em; }
+    .log-container {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      border: 1px solid #333;
+      border-radius: 5px;
+      padding: 15px;
+      margin: 20px 0;
+      overflow-x: auto;
+      max-height: 800px;
+      overflow-y: auto;
+    }
+    .log-container pre {
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+      font-size: 0.85em;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
