@@ -78,6 +78,14 @@ in
     };
 
     users.groups.${cfg.group} = {};
+    
+    # Configure git identity for merge commits
+    system.activationScripts.forge-git-config = ''
+      if [ -d "${cfg.dataDir}" ]; then
+        ${pkgs.sudo}/bin/sudo -u ${cfg.user} ${pkgs.git}/bin/git config --global user.email "forge@${cfg.domain}"
+        ${pkgs.sudo}/bin/sudo -u ${cfg.user} ${pkgs.git}/bin/git config --global user.name "Forge"
+      fi
+    '';
 
     systemd.services.forge = {
       description = "forge - Git forge service";
