@@ -116,6 +116,11 @@ export function layout(title: string, body: string): string {
       white-space: pre-wrap;
       word-wrap: break-word;
       margin: 0;
+      color: #d4d4d4;
+      line-height: 1.5;
+    }
+    #log-output * {
+      color: inherit !important;
     }
   </style>
 </head>
