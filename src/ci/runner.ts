@@ -127,7 +127,12 @@ export async function runCIJob(
       jobId,
     };
 
-    writeFileSync(statusPath, JSON.stringify(statusData, null, 2));
+    try {
+      mkdirSync(logDir, { recursive: true });
+      writeFileSync(statusPath, JSON.stringify(statusData, null, 2));
+    } catch (writeErr) {
+      console.error(`Failed to write status file:`, writeErr);
+    }
 
     console.log(`CI job ${jobId} completed with status: ${status} (exit ${exitCode})`);
 
