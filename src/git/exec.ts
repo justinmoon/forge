@@ -11,7 +11,11 @@ export function execGit(
   args: string[],
   options: { cwd?: string; env?: Record<string, string> } = {}
 ): GitResult {
-  const result = spawnSync('git', args, {
+  // Always trust repos in the data directory to avoid git safe.directory issues
+  const dataDir = process.env.FORGE_DATA_DIR || '/var/lib/forge';
+  const fullArgs = ['-c', `safe.directory=${dataDir}/repos/*`, ...args];
+  
+  const result = spawnSync('git', fullArgs, {
     cwd: options.cwd,
     env: { ...process.env, ...options.env },
     encoding: 'utf-8',
