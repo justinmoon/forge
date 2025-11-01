@@ -78,10 +78,24 @@ export async function runCIJob(
     
     const startTime = Date.now();
 
-    const ciProcess = spawn('nix', ['run', '.#ci'], {
-      cwd: worktreePath,
-      env: { ...process.env },
-    });
+    // Check for .forge/ci script first
+    const forgeCIPath = join(worktreePath, '.forge', 'ci');
+    const hasForgeCIScript = existsSync(forgeCIPath);
+    
+    let ciProcess;
+    if (hasForgeCIScript) {
+      // Run .forge/ci script
+      ciProcess = spawn(forgeCIPath, [], {
+        cwd: worktreePath,
+        env: { ...process.env },
+      });
+    } else {
+      // Fall back to nix run .#ci
+      ciProcess = spawn('nix', ['run', '.#ci'], {
+        cwd: worktreePath,
+        env: { ...process.env },
+      });
+    }
 
     runningJobs.set(jobId, {
       jobId,
