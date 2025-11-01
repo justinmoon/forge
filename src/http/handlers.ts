@@ -4,14 +4,16 @@ import { listRepos, getRepoPath } from '../utils/repos';
 import { listFeatureBranches, getHeadCommit } from '../git/branches';
 import { getMergeMetadata, getDiff } from '../git/merge';
 import { hasAutoMergeTrailer } from '../git/trailers';
-import { getCIStatus } from '../ci/status';
+import { getCIStatus, readCILog } from '../ci/status';
 import { renderRepoList } from '../views/repos';
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
 import { renderJobsDashboard, renderJobsScript } from '../views/jobs';
+import { renderHistory } from '../views/history';
 import { executeMerge } from '../git/merge-execute';
-import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs } from '../db';
+import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory } from '../db';
 import { runCIJob, getCPUUsage, cancelJob } from '../ci/runner';
 import { join } from 'path';
+import { existsSync } from 'fs';
 
 export function createHandlers(config: ForgeConfig) {
   return {
@@ -90,13 +92,36 @@ export function createHandlers(config: ForgeConfig) {
 
     getHistory: async (req: Request, params: Record<string, string>) => {
       const { repo } = params;
+      const history = getMergeHistory(repo, 100);
+      return htmlResponse(renderHistory(repo, history));
+    },
+
+    getCILog: async (req: Request, params: Record<string, string>) => {
+      const { repo, commit } = params;
+      const logPath = join(config.logsPath, repo, `${commit}.log`);
+
+      if (!existsSync(logPath)) {
+        return htmlResponse('<h1>Log not found</h1><p>The CI log has been pruned or does not exist.</p>', 404);
+      }
+
+      const logContent = readCILog(logPath);
+      const { escapeHtml } = await import('../views/layout');
+      
       return htmlResponse(`
         <!DOCTYPE html>
         <html>
-          <head><title>${repo} history - forge</title></head>
+          <head>
+            <title>CI Log - ${escapeHtml(commit.slice(0, 8))}</title>
+            <style>
+              body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+              pre { white-space: pre-wrap; word-wrap: break-word; }
+              a { color: #4fc3f7; }
+            </style>
+          </head>
           <body>
-            <h1>${repo} history</h1>
-            <p>Placeholder: Merged requests history</p>
+            <div><a href="/r/${escapeHtml(repo)}/history">&larr; Back to history</a></div>
+            <h2>CI Log for ${escapeHtml(commit.slice(0, 8))}</h2>
+            <pre>${escapeHtml(logContent)}</pre>
           </body>
         </html>
       `);
