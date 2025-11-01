@@ -62,7 +62,7 @@
           post-merge = {
             type = "app";
             program = toString (pkgs.writeShellScript "post-merge-deploy" ''
-              export PATH="${pkgs.lib.makeBinPath [ pkgs.git pkgs.nix pkgs.coreutils pkgs.bash ]}"
+              export PATH="${pkgs.lib.makeBinPath [ pkgs.git pkgs.nix pkgs.coreutils pkgs.bash pkgs.openssh ]}"
               exec ${pkgs.bash}/bin/bash ${./scripts/post-merge-deploy.sh} "$@"
             '');
           };
