@@ -22,6 +22,17 @@ export function execGit(
     maxBuffer: 10 * 1024 * 1024,
   });
 
+  if (result.status !== 0) {
+    console.error(`Git command failed: git ${fullArgs.join(' ')}`);
+    console.error(`  cwd: ${options.cwd || process.cwd()}`);
+    console.error(`  exit code: ${result.status}`);
+    console.error(`  stdout: ${result.stdout}`);
+    console.error(`  stderr: ${result.stderr}`);
+    if (result.error) {
+      console.error(`  error: ${result.error}`);
+    }
+  }
+
   return {
     success: result.status === 0,
     stdout: result.stdout || '',
