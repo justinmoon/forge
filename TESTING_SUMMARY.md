@@ -102,3 +102,29 @@ npm test
 ✅ **All changes working as expected in production**  
 ✅ **Pre-merge and post-merge workflow functional**  
 ✅ **Ready for GitOps use cases**
+
+## Update: Fixed Missing Nix in PATH
+
+### Issue Found
+Pre-merge job failed with: `Process error: Executable not found in $PATH: "nix"`
+
+### Root Cause
+Nix was not in the systemd service PATH. Service had git, bash, coreutils but not nix itself.
+
+### Fix Applied
+Added `pkgs.nix` to `path = [ gitPkg bashPkg coreutils pkgs.nix ];` in nix/module.nix
+
+### Re-tested
+- Deployed fix to production
+- Triggered new pre-merge job
+- Job #6 executed successfully
+- Merge triggered post-merge job
+- Both .#pre-merge and .#post-merge now working
+
+## Final Status
+
+✅ **Pre-merge working** - `nix run .#pre-merge` executes  
+✅ **Post-merge working** - `nix run .#post-merge` executes after merge  
+✅ **End-to-end workflow verified in production**  
+
+**All systems operational!**
