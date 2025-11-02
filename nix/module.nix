@@ -153,7 +153,7 @@ in
       };
     };
 
-    # Ensure Git is available for the service
-    environment.systemPackages = [ pkgs.git ];
+    # Ensure Git and forge CLI are available system-wide
+    environment.systemPackages = [ pkgs.git cfg.package ];
   };
 }
