@@ -182,14 +182,12 @@ export function renderJobsScript(): string {
   return `
     <script>
       function cancelJob(jobId) {
-        const password = prompt('Enter password to cancel job:');
-        if (!password) return;
+        if (!confirm('Cancel job #' + jobId + '?')) return;
 
         fetch('/jobs/' + jobId + '/cancel', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Forge-Password': password
+            'Content-Type': 'application/json'
           }
         })
         .then(res => res.json())
@@ -197,7 +195,6 @@ export function renderJobsScript(): string {
           if (data.error) {
             alert('Cancel failed: ' + data.error);
           } else {
-            alert('Job canceled successfully');
             window.location.reload();
           }
         })
@@ -207,14 +204,12 @@ export function renderJobsScript(): string {
       }
 
       function restartJob(jobId) {
-        const password = prompt('Enter password to restart job:');
-        if (!password) return;
+        if (!confirm('Restart job #' + jobId + '?')) return;
 
         fetch('/jobs/' + jobId + '/restart', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Forge-Password': password
+            'Content-Type': 'application/json'
           }
         })
         .then(res => res.json())

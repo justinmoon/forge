@@ -24,8 +24,8 @@ Commands:
   delete <repo>              Delete a repository (prompts for confirmation)
   status <repo> <branch>     Print MR fields, CI status, and merge eligibility
   wait-ci <repo> <branch>    Block until the latest CI run completes
-  cancel-ci <job_id>         Cancel an active CI job (requires password)
-  restart-ci <job_id>        Restart a failed/canceled CI job (requires password)
+  cancel-ci <job_id>         Cancel an active CI job
+  restart-ci <job_id>        Restart a failed/canceled CI job
   jobs                       List CI jobs (running first, then latest 100)
   --help, -h                 Show this help message
   --version, -v              Show version
@@ -196,19 +196,13 @@ if (!command) {
     process.exit(1);
   }
 
-  const password = process.env.FORGE_MERGE_PASSWORD;
-  if (!password) {
-    console.error('Error: FORGE_MERGE_PASSWORD environment variable is required');
-    process.exit(1);
-  }
-
   const config = getConfig();
 
   try {
     const response = await fetch(`http://localhost:${config.port}/jobs/${jobId}/cancel`, {
       method: 'POST',
       headers: {
-        'X-Forge-Password': password,
+        'Content-Type': 'application/json',
       },
     });
 
@@ -239,19 +233,13 @@ if (!command) {
     process.exit(1);
   }
 
-  const password = process.env.FORGE_MERGE_PASSWORD;
-  if (!password) {
-    console.error('Error: FORGE_MERGE_PASSWORD environment variable is required');
-    process.exit(1);
-  }
-
   const config = getConfig();
 
   try {
     const response = await fetch(`http://localhost:${config.port}/jobs/${jobId}/restart`, {
       method: 'POST',
       headers: {
-        'X-Forge-Password': password,
+        'Content-Type': 'application/json',
       },
     });
 

@@ -258,15 +258,6 @@ export function createHandlers(config: ForgeConfig) {
 
     postCancelJob: async (req: Request, params: Record<string, string>) => {
       const jobId = parseInt(params.jobId, 10);
-      const password = req.headers.get('X-Forge-Password');
-
-      if (!password) {
-        return jsonError(401, 'Password required');
-      }
-
-      if (password !== config.mergePassword) {
-        return jsonError(401, 'Invalid password');
-      }
 
       if (isNaN(jobId)) {
         return jsonError(400, 'Invalid job ID');
@@ -286,15 +277,6 @@ export function createHandlers(config: ForgeConfig) {
 
     postRestartJob: async (req: Request, params: Record<string, string>) => {
       const jobId = parseInt(params.jobId, 10);
-      const password = req.headers.get('X-Forge-Password');
-
-      if (!password) {
-        return jsonError(401, 'Password required');
-      }
-
-      if (password !== config.mergePassword) {
-        return jsonError(401, 'Invalid password');
-      }
 
       if (isNaN(jobId)) {
         return jsonError(400, 'Invalid job ID');
