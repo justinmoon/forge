@@ -52,6 +52,14 @@ function renderJobItem(job: CIJob, cpuUsage: number | null, showCancel: boolean)
     `
     : '';
 
+  const restartButton = (job.status === 'failed' || job.status === 'canceled')
+    ? `
+      <button class="button" style="background: #17a2b8; padding: 5px 10px; font-size: 0.85em; margin-left: 5px;" onclick="restartJob(${job.id})">
+        Restart
+      </button>
+    `
+    : '';
+
   return `
     <li>
       <div class="mr-item">
@@ -71,6 +79,7 @@ function renderJobItem(job: CIJob, cpuUsage: number | null, showCancel: boolean)
         <div class="mr-status">
           ${statusBadge}
           ${cancelButton}
+          ${restartButton}
         </div>
       </div>
     </li>
@@ -194,6 +203,31 @@ export function renderJobsScript(): string {
         })
         .catch(err => {
           alert('Cancel failed: ' + err.message);
+        });
+      }
+
+      function restartJob(jobId) {
+        const password = prompt('Enter password to restart job:');
+        if (!password) return;
+
+        fetch('/jobs/' + jobId + '/restart', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Forge-Password': password
+          }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            alert('Restart failed: ' + data.error);
+          } else {
+            alert('Job restarted as #' + data.newJobId);
+            window.location.reload();
+          }
+        })
+        .catch(err => {
+          alert('Restart failed: ' + err.message);
         });
       }
     </script>

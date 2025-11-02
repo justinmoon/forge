@@ -24,17 +24,31 @@ export function getRunningJob(jobId: number): RunningJob | undefined {
 
 export function cancelJob(jobId: number): boolean {
   const job = runningJobs.get(jobId);
+
+  // If job is not in memory, check if it exists in DB as "running"
   if (!job) {
+    const dbJob = getCIJob(jobId);
+    if (dbJob && dbJob.status === 'running') {
+      // Stuck job - mark as canceled in DB
+      updateCIJob(jobId, {
+        status: 'canceled',
+        finishedAt: new Date(),
+        exitCode: 143, // SIGTERM
+      });
+      console.log(`Canceled stuck job ${jobId} (no running process found)`);
+      return true;
+    }
     return false;
   }
 
   try {
     job.process.kill('SIGTERM');
     runningJobs.delete(jobId);
-    
+
     updateCIJob(jobId, {
       status: 'canceled',
       finishedAt: new Date(),
+      exitCode: 143, // SIGTERM
     });
 
     return true;
@@ -42,6 +56,43 @@ export function cancelJob(jobId: number): boolean {
     console.error(`Failed to cancel job ${jobId}:`, error);
     return false;
   }
+}
+
+export async function restartJob(config: ForgeConfig, jobId: number): Promise<{ success: boolean; newJobId?: number; error?: string }> {
+  const oldJob = getCIJob(jobId);
+
+  if (!oldJob) {
+    return { success: false, error: 'Job not found' };
+  }
+
+  if (oldJob.status === 'running' || oldJob.status === 'pending') {
+    return { success: false, error: 'Cannot restart a running or pending job' };
+  }
+
+  // Create new job with same parameters
+  const logPath = join(config.logsPath, oldJob.repo, `${oldJob.headCommit}.log`);
+
+  const newJobId = insertCIJob({
+    repo: oldJob.repo,
+    branch: oldJob.branch,
+    headCommit: oldJob.headCommit,
+    status: 'pending',
+    logPath,
+    startedAt: new Date(),
+  });
+
+  // Determine if this is a post-merge job (master branch) or pre-merge
+  if (oldJob.branch === 'master') {
+    runPostMergeJob(config, oldJob.repo, oldJob.headCommit).catch((err) => {
+      console.error(`Failed to restart post-merge job ${newJobId}:`, err);
+    });
+  } else {
+    runPreMergeJob(config, newJobId, oldJob.repo, oldJob.branch, oldJob.headCommit).catch((err) => {
+      console.error(`Failed to restart pre-merge job ${newJobId}:`, err);
+    });
+  }
+
+  return { success: true, newJobId };
 }
 
 export async function runPreMergeJob(

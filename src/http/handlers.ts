@@ -11,7 +11,7 @@ import { renderJobsDashboard, renderJobsScript, renderJobDetail } from '../views
 import { renderHistory } from '../views/history';
 import { executeMerge } from '../git/merge-execute';
 import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob, getPreviewByBranch, deletePreview, registerPreview, getPreviewBySubdomain } from '../db';
-import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob } from '../ci/runner';
+import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob, restartJob } from '../ci/runner';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -281,6 +281,35 @@ export function createHandlers(config: ForgeConfig) {
       return jsonResponse({
         success: true,
         message: 'Job canceled',
+      });
+    },
+
+    postRestartJob: async (req: Request, params: Record<string, string>) => {
+      const jobId = parseInt(params.jobId, 10);
+      const password = req.headers.get('X-Forge-Password');
+
+      if (!password) {
+        return jsonError(401, 'Password required');
+      }
+
+      if (password !== config.mergePassword) {
+        return jsonError(401, 'Invalid password');
+      }
+
+      if (isNaN(jobId)) {
+        return jsonError(400, 'Invalid job ID');
+      }
+
+      const result = await restartJob(config, jobId);
+
+      if (!result.success) {
+        return jsonError(400, result.error || 'Failed to restart job');
+      }
+
+      return jsonResponse({
+        success: true,
+        message: 'Job restarted',
+        newJobId: result.newJobId,
       });
     },
 

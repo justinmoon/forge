@@ -25,6 +25,7 @@ Commands:
   status <repo> <branch>     Print MR fields, CI status, and merge eligibility
   wait-ci <repo> <branch>    Block until the latest CI run completes
   cancel-ci <job_id>         Cancel an active CI job (requires password)
+  restart-ci <job_id>        Restart a failed/canceled CI job (requires password)
   jobs                       List CI jobs (running first, then latest 100)
   --help, -h                 Show this help message
   --version, -v              Show version
@@ -195,9 +196,78 @@ if (!command) {
     process.exit(1);
   }
 
-  console.error('CLI job cancellation requires server API call');
-  console.error('Use: curl -X POST -H "X-Forge-Password: <password>" http://localhost:3030/jobs/' + jobId + '/cancel');
-  process.exit(1);
+  const password = process.env.FORGE_MERGE_PASSWORD;
+  if (!password) {
+    console.error('Error: FORGE_MERGE_PASSWORD environment variable is required');
+    process.exit(1);
+  }
+
+  const config = getConfig();
+
+  try {
+    const response = await fetch(`http://localhost:${config.port}/jobs/${jobId}/cancel`, {
+      method: 'POST',
+      headers: {
+        'X-Forge-Password': password,
+      },
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      console.log(`✓ Job ${jobId} canceled successfully`);
+      process.exit(0);
+    } else {
+      console.error(`Error: ${result.error || 'Failed to cancel job'}`);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+} else if (command === 'restart-ci') {
+  const jobIdStr = process.argv[3];
+
+  if (!jobIdStr) {
+    console.error('Usage: forge restart-ci <job_id>');
+    process.exit(1);
+  }
+
+  const jobId = parseInt(jobIdStr, 10);
+  if (isNaN(jobId)) {
+    console.error('Invalid job ID');
+    process.exit(1);
+  }
+
+  const password = process.env.FORGE_MERGE_PASSWORD;
+  if (!password) {
+    console.error('Error: FORGE_MERGE_PASSWORD environment variable is required');
+    process.exit(1);
+  }
+
+  const config = getConfig();
+
+  try {
+    const response = await fetch(`http://localhost:${config.port}/jobs/${jobId}/restart`, {
+      method: 'POST',
+      headers: {
+        'X-Forge-Password': password,
+      },
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      console.log(`✓ Job ${jobId} restarted as job #${result.newJobId}`);
+      process.exit(0);
+    } else {
+      console.error(`Error: ${result.error || 'Failed to restart job'}`);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 } else if (command === 'jobs') {
   const config = getConfig();
   initDatabase(config.dbPath);

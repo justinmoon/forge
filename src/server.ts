@@ -30,6 +30,7 @@ export function startServer(config: ForgeConfig): Server {
   router.post('/r/:repo/mr/:branch/merge', handlers.postMerge);
   router.post('/r/:repo/mr/:branch/delete', handlers.postDeleteBranch);
   router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
+  router.post('/jobs/:jobId/restart', handlers.postRestartJob);
   router.post('/hooks/post-receive', handlers.postReceive);
   router.post('/register-preview', handlers.postRegisterPreview);
 
