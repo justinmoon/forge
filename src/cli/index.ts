@@ -27,9 +27,6 @@ Commands:
   jobs                       List CI jobs (running first, then latest 100)
   --help, -h                 Show this help message
   --version, -v              Show version
-
-Server:
-  forge                      Start the HTTP server (default)
 `);
 }
 
@@ -44,7 +41,8 @@ if (command === '--version' || command === '-v') {
 }
 
 if (!command) {
-  await import('../index.js');
+  printHelp();
+  process.exit(0);
 } else if (command === 'create') {
   const repoName = process.argv[3];
 
