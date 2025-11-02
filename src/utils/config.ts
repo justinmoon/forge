@@ -2,11 +2,12 @@ import type { ForgeConfig } from '../types';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
-export function getConfig(): ForgeConfig {
+export function getConfig(requirePassword: boolean = false): ForgeConfig {
   const dataDir = process.env.FORGE_DATA_DIR || '/var/lib/forge';
   const port = parseInt(process.env.FORGE_PORT || '3030', 10);
-  const mergePassword = process.env.FORGE_MERGE_PASSWORD;
-  if (!mergePassword) {
+  const mergePassword = process.env.FORGE_MERGE_PASSWORD || '';
+  
+  if (requirePassword && !mergePassword) {
     throw new Error(
       'FORGE_MERGE_PASSWORD environment variable must be set. ' +
       'Merges are disabled without a password for security reasons.'

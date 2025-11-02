@@ -1,7 +1,7 @@
 import { getConfig } from './utils/config';
 import { startServer } from './server';
 
-const config = getConfig();
+const config = getConfig(true); // Server requires password
 
 console.log('forge server v0.1.0');
 console.log(`Data directory: ${config.dataDir}`);
