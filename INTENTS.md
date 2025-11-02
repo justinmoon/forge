@@ -13,3 +13,7 @@ plans/
   plan.md
   spec.md 
 AGENTS.md
+
+
+
+- be paranoid about fallbacks. it's almost always better to fail than to fallback to something which might be wrong. don't fear errors. embrace them!

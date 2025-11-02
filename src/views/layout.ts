@@ -348,7 +348,6 @@ export function layout(title: string, body: string): string {
     </nav>
   </header>
   <main>
-    <div>hello world</div>
     ${body}
   </main>
 </body>
