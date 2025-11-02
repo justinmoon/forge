@@ -42,7 +42,7 @@ export function startServer(config: ForgeConfig): Server {
       console.log(`[${new Date().toISOString()}] ${req.method} ${url.pathname}`);
       
       // Check if this is a preview subdomain request
-      const host = url.hostname;
+      const host = req.headers.get('host') || url.hostname;
       if (host.match(/^preview-[a-f0-9]+\./)) {
         // Handle preview proxy
         const response = handlers.proxyPreview(req, {});
