@@ -119,7 +119,7 @@ in
         Type = "simple";
         User = cfg.user;
         Group = cfg.group;
-        ExecStart = "${cfg.package}/bin/forge";
+        ExecStart = "${cfg.package}/bin/forge server";
         Restart = "on-failure";
         RestartSec = "10s";
 

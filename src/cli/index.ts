@@ -19,6 +19,7 @@ Usage:
   forge [command] [options]
 
 Commands:
+  server                     Start the forge HTTP server (requires FORGE_MERGE_PASSWORD)
   create <repo>              Create a new repository with post-receive hook
   delete <repo>              Delete a repository (prompts for confirmation)
   status <repo> <branch>     Print MR fields, CI status, and merge eligibility
@@ -43,6 +44,9 @@ if (command === '--version' || command === '-v') {
 if (!command) {
   printHelp();
   process.exit(0);
+} else if (command === 'server') {
+  // Start the HTTP server
+  await import('../index.js');
 } else if (command === 'create') {
   const repoName = process.argv[3];
 
