@@ -22,7 +22,16 @@ test-file file:
 
 # Run the server in development mode
 dev:
-    bun run src/index.ts
+    #!/usr/bin/env bash
+    export NODE_ENV=development
+    export DISABLE_AUTH=true
+    export FORGE_DATA_DIR="./tmp/forge-dev"
+    export FORGE_PORT=3030
+    mkdir -p ./tmp/forge-dev
+    bun run src/index.ts &
+    sleep 2
+    open http://localhost:3030
+    wait
 
 # Run the server (alias for dev)
 start: dev

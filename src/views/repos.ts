@@ -55,17 +55,6 @@ export function renderCreateRepoForm(error?: string): string {
         <small style="color: #666;">Letters, numbers, hyphens, and underscores only</small>
       </div>
       
-      <div style="margin-bottom: 16px;">
-        <label for="password" style="display: block; margin-bottom: 4px; font-weight: bold;">Password</label>
-        <input 
-          type="password" 
-          id="password" 
-          name="password" 
-          required 
-          style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;"
-        />
-      </div>
-      
       <div>
         <button 
           type="submit" 
@@ -126,17 +115,6 @@ export function renderDeleteConfirmation(repoName: string): string {
           name="confirm" 
           required 
           placeholder="${escapeHtml(repoName)}"
-          style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;"
-        />
-      </div>
-      
-      <div style="margin-bottom: 16px;">
-        <label for="password" style="display: block; margin-bottom: 4px; font-weight: bold;">Password</label>
-        <input 
-          type="password" 
-          id="password" 
-          name="password" 
-          required 
           style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;"
         />
       </div>

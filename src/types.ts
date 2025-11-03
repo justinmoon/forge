@@ -50,10 +50,11 @@ export interface PostReceivePayload {
 export interface ForgeConfig {
   dataDir: string;
   port: number;
-  mergePassword: string;
+  allowedPubkeys: string[];
   reposPath: string;
   logsPath: string;
   dbPath: string;
   workPath: string;
   domain?: string;
+  isDevelopment: boolean;
 }

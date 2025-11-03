@@ -137,14 +137,10 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
 
     <script>
       function handleMerge() {
-        const password = prompt('Enter merge password:');
-        if (!password) return;
-
         fetch(window.location.pathname + '/merge', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Forge-Password': password
+            'Content-Type': 'application/json'
           }
         })
         .then(res => res.json())
@@ -166,14 +162,10 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
           return;
         }
 
-        const password = prompt('Enter password to delete branch:');
-        if (!password) return;
-
         fetch(window.location.pathname + '/delete', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Forge-Password': password
+            'Content-Type': 'application/json'
           }
         })
         .then(res => res.json())

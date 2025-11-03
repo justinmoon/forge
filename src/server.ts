@@ -3,6 +3,7 @@ import { ensureDataDirectories } from './utils/config';
 import { initDatabase } from './db';
 import { createRouter } from './http/router';
 import { createHandlers } from './http/handlers';
+import { createSessionMiddleware } from './http/middleware';
 
 export interface Server {
   port: number;
@@ -16,6 +17,17 @@ export function startServer(config: ForgeConfig): Server {
   const router = createRouter();
   const handlers = createHandlers(config);
 
+  // Apply session middleware to protect routes
+  const sessionMiddleware = createSessionMiddleware(config);
+  router.use(sessionMiddleware);
+
+  // Auth routes (public)
+  router.get('/login', handlers.getLogin);
+  router.get('/auth/challenge', handlers.getAuthChallenge);
+  router.post('/auth/verify', handlers.postAuthVerify);
+  router.post('/logout', handlers.postLogout);
+
+  // Protected routes
   router.get('/', handlers.getRoot);
   router.get('/create', handlers.getCreate);
   router.post('/create', handlers.postCreate);

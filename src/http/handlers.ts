@@ -9,11 +9,29 @@ import { renderRepoList, renderCreateRepoForm, renderRepoCreated, renderDeleteCo
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
 import { renderJobsDashboard, renderJobsScript, renderJobDetail } from '../views/jobs';
 import { renderHistory } from '../views/history';
+import { renderLogin } from '../views/login';
 import { executeMerge } from '../git/merge-execute';
 import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob } from '../db';
 import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob } from '../ci/runner';
+import { verifySignedEvent, isWhitelisted } from '../auth/nostr';
+import { createSession, deleteSession } from '../auth/session';
+import { getSessionCookie } from './middleware';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { existsSync } from 'fs';
+
+// Store active challenges (in production, use Redis or similar)
+const activeChallenges = new Map<string, number>();
+
+// Clean up old challenges periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [challenge, timestamp] of activeChallenges.entries()) {
+    if (now - timestamp > 5 * 60 * 1000) { // 5 minutes
+      activeChallenges.delete(challenge);
+    }
+  }
+}, 60 * 1000); // Every minute
 
 export function createHandlers(config: ForgeConfig) {
   return {
@@ -30,11 +48,6 @@ export function createHandlers(config: ForgeConfig) {
       try {
         const formData = await req.formData();
         const name = formData.get('name') as string;
-        const password = formData.get('password') as string;
-
-        if (!password || password !== config.mergePassword) {
-          return htmlResponse(renderCreateRepoForm('Invalid password'), 401);
-        }
 
         const result = createRepository(config, name);
 
@@ -42,9 +55,12 @@ export function createHandlers(config: ForgeConfig) {
           return htmlResponse(renderCreateRepoForm(result.error), 400);
         }
 
-        const cloneUrl = config.domain 
-          ? `forge@${config.domain}:${name}.git`
-          : `git@localhost:${name}.git`;
+        // In dev mode, use file:// protocol for easy local cloning
+        const cloneUrl = config.isDevelopment
+          ? `file://${join(config.reposPath, `${name}.git`)}`
+          : config.domain 
+            ? `forge@${config.domain}:${name}.git`
+            : `git@localhost:${name}.git`;
         const webUrl = `/r/${name}`;
 
         return htmlResponse(renderRepoCreated(name, cloneUrl, webUrl));
@@ -71,11 +87,6 @@ export function createHandlers(config: ForgeConfig) {
       try {
         const formData = await req.formData();
         const confirm = formData.get('confirm') as string;
-        const password = formData.get('password') as string;
-
-        if (!password || password !== config.mergePassword) {
-          return jsonError(401, 'Invalid password');
-        }
 
         if (confirm !== repo) {
           return jsonError(400, 'Repository name does not match');
@@ -256,15 +267,6 @@ export function createHandlers(config: ForgeConfig) {
 
     postCancelJob: async (req: Request, params: Record<string, string>) => {
       const jobId = parseInt(params.jobId, 10);
-      const password = req.headers.get('X-Forge-Password');
-
-      if (!password) {
-        return jsonError(401, 'Password required');
-      }
-
-      if (password !== config.mergePassword) {
-        return jsonError(401, 'Invalid password');
-      }
 
       if (isNaN(jobId)) {
         return jsonError(400, 'Invalid job ID');
@@ -284,15 +286,6 @@ export function createHandlers(config: ForgeConfig) {
 
     postMerge: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
-      const password = req.headers.get('X-Forge-Password');
-
-      if (!password) {
-        return jsonError(401, 'Password required');
-      }
-
-      if (password !== config.mergePassword) {
-        return jsonError(401, 'Invalid password');
-      }
 
       const repoPath = getRepoPath(config.reposPath, repo);
       
@@ -346,15 +339,6 @@ export function createHandlers(config: ForgeConfig) {
 
     postDeleteBranch: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
-      const password = req.headers.get('X-Forge-Password');
-
-      if (!password) {
-        return jsonError(401, 'Password required');
-      }
-
-      if (password !== config.mergePassword) {
-        return jsonError(401, 'Invalid password');
-      }
 
       if (branch === 'master') {
         return jsonError(400, 'Cannot delete master branch');
@@ -447,6 +431,97 @@ export function createHandlers(config: ForgeConfig) {
         console.error('Post-receive error:', error);
         return jsonError(400, 'Invalid request: ' + String(error));
       }
+    },
+
+    getLogin: async (req: Request, params: Record<string, string>) => {
+      return htmlResponse(renderLogin());
+    },
+
+    getAuthChallenge: async (req: Request, params: Record<string, string>) => {
+      // Generate random challenge
+      const challenge = randomBytes(32).toString('hex');
+      
+      // Store challenge with timestamp
+      activeChallenges.set(challenge, Date.now());
+      
+      return jsonResponse({ challenge });
+    },
+
+    postAuthVerify: async (req: Request, params: Record<string, string>) => {
+      try {
+        const body = await req.json() as any;
+        const { event, challenge } = body;
+
+        if (!event || !challenge) {
+          return jsonError(400, 'Missing event or challenge');
+        }
+
+        // Verify challenge was issued by us
+        if (!activeChallenges.has(challenge)) {
+          return jsonError(401, 'Invalid or expired challenge');
+        }
+
+        // Remove challenge (single use)
+        activeChallenges.delete(challenge);
+
+        // Verify signed event
+        if (!verifySignedEvent(event, challenge)) {
+          return jsonError(401, 'Invalid signature');
+        }
+
+        // Check if pubkey is whitelisted
+        if (!isWhitelisted(event.pubkey, config.allowedPubkeys)) {
+          return jsonError(403, 'Access denied: pubkey not whitelisted');
+        }
+
+        // Create session
+        const sessionId = createSession(event.pubkey);
+
+        // Set session cookie
+        const response = jsonResponse({
+          success: true,
+          message: 'Authentication successful'
+        });
+
+        // Set cookie (HttpOnly, Secure in production, 1 year expiration)
+        const cookieOptions = [
+          'HttpOnly',
+          'Path=/',
+          'Max-Age=31536000', // 1 year
+          'SameSite=Lax',
+        ];
+
+        // Only set Secure flag in production (not on localhost)
+        if (process.env.NODE_ENV === 'production') {
+          cookieOptions.push('Secure');
+        }
+
+        response.headers.set('Set-Cookie', `forge_session=${sessionId}; ${cookieOptions.join('; ')}`);
+
+        return response;
+      } catch (error) {
+        console.error('Auth verify error:', error);
+        return jsonError(400, 'Invalid request: ' + String(error));
+      }
+    },
+
+    postLogout: async (req: Request, params: Record<string, string>) => {
+      const sessionId = getSessionCookie(req);
+      
+      if (sessionId) {
+        deleteSession(sessionId);
+      }
+
+      // Clear session cookie
+      const response = new Response('', {
+        status: 302,
+        headers: {
+          'Location': '/login',
+          'Set-Cookie': 'forge_session=; HttpOnly; Path=/; Max-Age=0'
+        }
+      });
+
+      return response;
     },
   };
 }

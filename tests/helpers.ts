@@ -25,11 +25,12 @@ export function createTestContext(): TestContext {
   const config: ForgeConfig = {
     dataDir: tempDir,
     port: 0,
-    mergePassword: 'test-password',
+    allowedPubkeys: [],
     reposPath,
     logsPath,
     dbPath,
     workPath,
+    isDevelopment: true,
   };
 
   const cleanup = () => {

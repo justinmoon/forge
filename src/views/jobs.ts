@@ -173,14 +173,10 @@ export function renderJobsScript(): string {
   return `
     <script>
       function cancelJob(jobId) {
-        const password = prompt('Enter password to cancel job:');
-        if (!password) return;
-
         fetch('/jobs/' + jobId + '/cancel', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Forge-Password': password
+            'Content-Type': 'application/json'
           }
         })
         .then(res => res.json())
