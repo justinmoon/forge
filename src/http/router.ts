@@ -3,9 +3,12 @@ export interface Route {
   handler: (req: Request, params: Record<string, string>) => Response | Promise<Response>;
 }
 
+export type Middleware = (req: Request) => Promise<Response | null>;
+
 export interface Router {
   get: (pattern: string, handler: Route['handler']) => void;
   post: (pattern: string, handler: Route['handler']) => void;
+  use: (middleware: Middleware) => void;
   handle: (req: Request) => Response | Promise<Response>;
 }
 
@@ -14,6 +17,7 @@ export function createRouter(): Router {
     ['GET', []],
     ['POST', []],
   ]);
+  const middlewares: Middleware[] = [];
 
   function addRoute(method: string, pattern: string, handler: Route['handler']): void {
     const paramNames: string[] = [];
@@ -44,7 +48,19 @@ export function createRouter(): Router {
     });
   }
 
+  function use(middleware: Middleware): void {
+    middlewares.push(middleware);
+  }
+
   async function handle(req: Request): Promise<Response> {
+    // Run middlewares first
+    for (const middleware of middlewares) {
+      const response = await middleware(req);
+      if (response) {
+        return response;
+      }
+    }
+
     const method = req.method;
     const url = new URL(req.url);
     const pathname = url.pathname;
@@ -68,6 +84,7 @@ export function createRouter(): Router {
   return {
     get: (pattern, handler) => addRoute('GET', pattern, handler),
     post: (pattern, handler) => addRoute('POST', pattern, handler),
+    use,
     handle,
   };
 }

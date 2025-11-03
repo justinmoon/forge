@@ -6,7 +6,9 @@
     "forge": "./src/cli/index.ts"
   },
   "dependencies": {
-    "ansi-to-html": "^0.7.2"
+    "ansi-to-html": "^0.7.2",
+    "applesauce-core": "file:../applesauce/packages/core",
+    "applesauce-signers": "file:../applesauce/packages/signers"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",

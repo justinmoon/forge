@@ -3,6 +3,7 @@ import { ensureDataDirectories } from './utils/config';
 import { initDatabase } from './db';
 import { createRouter } from './http/router';
 import { createHandlers } from './http/handlers';
+import { createSessionMiddleware } from './http/middleware';
 
 export interface Server {
   port: number;
@@ -14,8 +15,29 @@ export function startServer(config: ForgeConfig): Server {
   initDatabase(config.dbPath);
 
   const router = createRouter();
-  const handlers = createHandlers(config);
+  
+  // We'll capture the Bun server instance to extract real client IPs
+  let bunServer: any = null;
+  const getDirectIP = (req: Request): string => {
+    if (!bunServer) return 'unknown';
+    // Use Bun's requestIP to get the actual TCP connection address
+    const ipData = bunServer.requestIP(req);
+    return ipData?.address || 'unknown';
+  };
+  
+  const handlers = createHandlers(config, getDirectIP);
 
+  // Apply session middleware to protect routes
+  const sessionMiddleware = createSessionMiddleware(config);
+  router.use(sessionMiddleware);
+
+  // Auth routes (public)
+  router.get('/login', handlers.getLogin);
+  router.get('/auth/challenge', handlers.getAuthChallenge);
+  router.post('/auth/verify', handlers.postAuthVerify);
+  router.post('/logout', handlers.postLogout);
+
+  // Protected routes
   router.get('/', handlers.getRoot);
   router.get('/create', handlers.getCreate);
   router.post('/create', handlers.postCreate);
@@ -34,7 +56,7 @@ export function startServer(config: ForgeConfig): Server {
   router.post('/hooks/post-receive', handlers.postReceive);
   router.post('/register-preview', handlers.postRegisterPreview);
 
-  const server = Bun.serve({
+  bunServer = Bun.serve({
     port: config.port,
     fetch(req) {
       const start = Date.now();
@@ -63,13 +85,13 @@ export function startServer(config: ForgeConfig): Server {
     },
   });
 
-  const actualPort = server.port;
+  const actualPort = bunServer.port;
   if (!actualPort) {
     throw new Error('Failed to bind server to port');
   }
 
   return {
     port: actualPort,
-    stop: () => server.stop(),
+    stop: () => bunServer.stop(),
   };
 }

@@ -25,11 +25,13 @@ export function createTestContext(): TestContext {
   const config: ForgeConfig = {
     dataDir: tempDir,
     port: 0,
-    mergePassword: 'test-password',
+    allowedPubkeys: ['test-fixture-pubkey'], // Required in test mode
     reposPath,
     logsPath,
     dbPath,
     workPath,
+    isDevelopment: true,
+    trustProxy: false, // Tests run without proxy
   };
 
   const cleanup = () => {

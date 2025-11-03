@@ -25,8 +25,9 @@ export function layout(title: string, body: string): string {
     h3 { font-size: 1.2em; margin: 15px 0 10px; }
     a { color: #0066cc; text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .nav { margin-bottom: 20px; }
-    .nav a { margin-right: 15px; }
+    .nav { margin-bottom: 20px; display: flex; align-items: center; gap: 15px; }
+    .nav a { text-decoration: none; }
+    .nav button:hover { text-decoration: underline; }
     .repo-list, .mr-list { list-style: none; }
     .repo-list li, .mr-list li {
       padding: 15px;
@@ -345,6 +346,11 @@ export function layout(title: string, body: string): string {
     <nav class="nav">
       <a href="/">Repositories</a>
       <a href="/jobs">CI Jobs</a>
+      <form action="/logout" method="POST" style="display: inline; margin-left: auto;">
+        <button type="submit" style="background: none; border: none; color: #0066cc; cursor: pointer; font-size: inherit; text-decoration: none; padding: 0; font-family: inherit;">
+          Logout
+        </button>
+      </form>
     </nav>
   </header>
   <main>

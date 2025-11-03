@@ -9,13 +9,70 @@ import { renderRepoList, renderCreateRepoForm, renderRepoCreated, renderDeleteCo
 import { renderMRList, renderMRDetail } from '../views/merge-requests';
 import { renderJobsDashboard, renderJobsScript, renderJobDetail } from '../views/jobs';
 import { renderHistory } from '../views/history';
+import { renderLogin } from '../views/login';
 import { executeMerge } from '../git/merge-execute';
 import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob, getPreviewByBranch, deletePreview, registerPreview, getPreviewBySubdomain } from '../db';
 import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob, restartJob } from '../ci/runner';
+import { verifySignedEvent, isWhitelisted } from '../auth/nostr';
+import { createSession, deleteSession } from '../auth/session';
+import { getSessionCookie } from './middleware';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
-export function createHandlers(config: ForgeConfig) {
+// Store active challenges with IP binding and rate limiting
+interface ChallengeEntry {
+  issuedAt: number;
+  ip: string; // TCP connection address or forwarded IP
+}
+
+const activeChallenges = new Map<string, ChallengeEntry>();
+const CHALLENGE_MAX_AGE = 5 * 60 * 1000; // 5 minutes
+const CHALLENGE_RATE_LIMIT = 5; // per IP per minute
+const CHALLENGE_GLOBAL_LIMIT = 1000;
+
+// Get request IP - use direct connection address or trusted proxy headers
+function getRequestIP(req: Request, trustProxy: boolean, directIP?: string): string {
+  // If behind a trusted proxy, prefer forwarded headers for original client IP
+  if (trustProxy) {
+    const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0].trim();
+    if (forwarded) return forwarded;
+    
+    const realIp = req.headers.get('x-real-ip');
+    if (realIp) return realIp;
+  }
+  
+  // Fall back to direct connection IP (always trustworthy, from TCP connection)
+  // This is the remote address from Bun's server.requestIP(req)
+  if (directIP) return directIP;
+  
+  // Should never happen, but return a sentinel if we somehow have no IP
+  return 'unknown';
+}
+
+// Count challenges issued to an IP in the last minute
+function countRecentChallengesForIP(ip: string): number {
+  const oneMinuteAgo = Date.now() - 60 * 1000;
+  let count = 0;
+  for (const entry of activeChallenges.values()) {
+    if (entry.ip === ip && entry.issuedAt > oneMinuteAgo) {
+      count++;
+    }
+  }
+  return count;
+}
+
+// Clean up old challenges periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [challenge, entry] of activeChallenges.entries()) {
+    if (now - entry.issuedAt > CHALLENGE_MAX_AGE) {
+      activeChallenges.delete(challenge);
+    }
+  }
+}, 60 * 1000); // Every minute
+
+export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) => string) {
   return {
     getRoot: async (req: Request, params: Record<string, string>) => {
       const repos = listRepos(config.reposPath);
@@ -30,11 +87,6 @@ export function createHandlers(config: ForgeConfig) {
       try {
         const formData = await req.formData();
         const name = formData.get('name') as string;
-        const password = formData.get('password') as string;
-
-        if (!password || password !== config.mergePassword) {
-          return htmlResponse(renderCreateRepoForm('Invalid password'), 401);
-        }
 
         const result = createRepository(config, name);
 
@@ -42,9 +94,12 @@ export function createHandlers(config: ForgeConfig) {
           return htmlResponse(renderCreateRepoForm(result.error), 400);
         }
 
-        const cloneUrl = config.domain 
-          ? `forge@${config.domain}:${name}.git`
-          : `git@localhost:${name}.git`;
+        // In dev mode, use file:// protocol for easy local cloning
+        const cloneUrl = config.isDevelopment
+          ? `file://${join(config.reposPath, `${name}.git`)}`
+          : config.domain 
+            ? `forge@${config.domain}:${name}.git`
+            : `git@localhost:${name}.git`;
         const webUrl = `/r/${name}`;
 
         return htmlResponse(renderRepoCreated(name, cloneUrl, webUrl));
@@ -71,11 +126,6 @@ export function createHandlers(config: ForgeConfig) {
       try {
         const formData = await req.formData();
         const confirm = formData.get('confirm') as string;
-        const password = formData.get('password') as string;
-
-        if (!password || password !== config.mergePassword) {
-          return jsonError(401, 'Invalid password');
-        }
 
         if (confirm !== repo) {
           return jsonError(400, 'Repository name does not match');
@@ -297,15 +347,6 @@ export function createHandlers(config: ForgeConfig) {
 
     postMerge: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
-      const password = req.headers.get('X-Forge-Password');
-
-      if (!password) {
-        return jsonError(401, 'Password required');
-      }
-
-      if (password !== config.mergePassword) {
-        return jsonError(401, 'Invalid password');
-      }
 
       const repoPath = getRepoPath(config.reposPath, repo);
       
@@ -362,15 +403,6 @@ export function createHandlers(config: ForgeConfig) {
 
     postDeleteBranch: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
-      const password = req.headers.get('X-Forge-Password');
-
-      if (!password) {
-        return jsonError(401, 'Password required');
-      }
-
-      if (password !== config.mergePassword) {
-        return jsonError(401, 'Invalid password');
-      }
 
       if (branch === 'master') {
         return jsonError(400, 'Cannot delete master branch');
@@ -466,6 +498,111 @@ export function createHandlers(config: ForgeConfig) {
       }
     },
 
+    getLogin: async (req: Request, params: Record<string, string>) => {
+      return htmlResponse(renderLogin());
+    },
+
+    getAuthChallenge: async (req: Request, params: Record<string, string>) => {
+      const directIP = getDirectIP(req);
+      const ip = getRequestIP(req, config.trustProxy, directIP);
+      
+      // Check global limit (always enforced)
+      if (activeChallenges.size >= CHALLENGE_GLOBAL_LIMIT) {
+        return jsonError(503, 'Service temporarily unavailable. Too many active auth attempts.');
+      }
+      
+      // Check per-IP rate limit (always enforced with real client address)
+      const recentCount = countRecentChallengesForIP(ip);
+      if (recentCount >= CHALLENGE_RATE_LIMIT) {
+        return jsonError(429, 'Too many authentication attempts. Please wait a moment.');
+      }
+      
+      // Generate random challenge
+      const challenge = randomBytes(32).toString('hex');
+      
+      // Store challenge with timestamp and IP binding
+      activeChallenges.set(challenge, {
+        issuedAt: Date.now(),
+        ip,
+      });
+      
+      return jsonResponse({ challenge });
+    },
+
+    postAuthVerify: async (req: Request, params: Record<string, string>) => {
+      try {
+        const body = await req.json() as any;
+        const { event, challenge } = body;
+
+        if (!event || !challenge) {
+          return jsonError(400, 'Missing event or challenge');
+        }
+
+        // Verify challenge was issued by us
+        const challengeEntry = activeChallenges.get(challenge);
+        if (!challengeEntry) {
+          return jsonError(401, 'Invalid or expired challenge');
+        }
+
+        // Verify IP matches (always enforced - prevents challenge theft)
+        const directIP = getDirectIP(req);
+        const ip = getRequestIP(req, config.trustProxy, directIP);
+        if (challengeEntry.ip !== ip) {
+          activeChallenges.delete(challenge);
+          return jsonError(401, 'Challenge IP mismatch');
+        }
+
+        // Verify challenge age (defense in depth - should be caught by cleanup)
+        const age = Date.now() - challengeEntry.issuedAt;
+        if (age > CHALLENGE_MAX_AGE) {
+          activeChallenges.delete(challenge);
+          return jsonError(401, 'Challenge expired');
+        }
+
+        // Remove challenge (single use)
+        activeChallenges.delete(challenge);
+
+        // Verify signed event
+        if (!verifySignedEvent(event, challenge)) {
+          return jsonError(401, 'Invalid signature');
+        }
+
+        // Check if pubkey is whitelisted
+        if (!isWhitelisted(event.pubkey, config.allowedPubkeys)) {
+          return jsonError(403, 'Access denied: pubkey not whitelisted');
+        }
+
+        // Create session
+        const sessionId = createSession(event.pubkey);
+
+        // Set session cookie
+        const response = jsonResponse({
+          success: true,
+          message: 'Authentication successful'
+        });
+
+        // Set cookie (HttpOnly always, Secure unless in dev mode, 1 year expiration)
+        const cookieOptions = [
+          'HttpOnly',
+          'Path=/',
+          'Max-Age=31536000', // 1 year
+          'SameSite=Lax',
+        ];
+
+        // Always set Secure flag unless in development mode
+        if (!config.isDevelopment) {
+          cookieOptions.push('Secure');
+        }
+
+        response.headers.set('Set-Cookie', `forge_session=${sessionId}; ${cookieOptions.join('; ')}`);
+
+        return response;
+      } catch (error) {
+        console.error('Auth verify error:', error);
+        return jsonError(400, 'Invalid request: ' + String(error));
+      }
+    },
+
     postRegisterPreview: async (req: Request, params: Record<string, string>) => {
       try {
         const payload = await req.json() as any;
@@ -502,6 +639,25 @@ export function createHandlers(config: ForgeConfig) {
         console.error('Register preview error:', error);
         return jsonError(400, 'Invalid request: ' + String(error));
       }
+    },
+
+    postLogout: async (req: Request, params: Record<string, string>) => {
+      const sessionId = getSessionCookie(req);
+      
+      if (sessionId) {
+        deleteSession(sessionId);
+      }
+
+      // Clear session cookie
+      const response = new Response('', {
+        status: 302,
+        headers: {
+          'Location': '/login',
+          'Set-Cookie': 'forge_session=; HttpOnly; Path=/; Max-Age=0'
+        }
+      });
+
+      return response;
     },
 
     proxyPreview: async (req: Request, params: Record<string, string>) => {
