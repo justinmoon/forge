@@ -226,3 +226,35 @@ export function cancelPendingJobs(repo: string, branch: string, exceptJobId?: nu
 
   db.run(`UPDATE ci_jobs SET status = 'canceled' WHERE ${where}`, params);
 }
+
+export function registerPreview(subdomain: string, repo: string, branch: string, port: number): void {
+  const db = getDatabase();
+  db.run(
+    `INSERT OR REPLACE INTO preview_deployments (subdomain, repo, branch, port, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [subdomain, repo, branch, port, new Date().toISOString()]
+  );
+}
+
+export function getPreviewBySubdomain(subdomain: string): { port: number; repo: string; branch: string } | null {
+  const db = getDatabase();
+  const row = db
+    .query('SELECT port, repo, branch FROM preview_deployments WHERE subdomain = ?')
+    .get(subdomain) as any;
+
+  return row ? { port: row.port, repo: row.repo, branch: row.branch } : null;
+}
+
+export function getPreviewByBranch(repo: string, branch: string): { subdomain: string; port: number } | null {
+  const db = getDatabase();
+  const row = db
+    .query('SELECT subdomain, port FROM preview_deployments WHERE repo = ? AND branch = ?')
+    .get(repo, branch) as any;
+
+  return row ? { subdomain: row.subdomain, port: row.port } : null;
+}
+
+export function deletePreview(repo: string, branch: string): void {
+  const db = getDatabase();
+  db.run('DELETE FROM preview_deployments WHERE repo = ? AND branch = ?', [repo, branch]);
+}

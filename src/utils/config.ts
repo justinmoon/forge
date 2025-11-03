@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { npubToHex } from '../auth/nostr';
 
-export function getConfig(): ForgeConfig {
+export function getConfig(requirePassword: boolean = false): ForgeConfig {
   const dataDir = process.env.FORGE_DATA_DIR || '/var/lib/forge';
   const port = parseInt(process.env.FORGE_PORT || '3030', 10);
   

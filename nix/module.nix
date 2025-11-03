@@ -119,7 +119,7 @@ in
         Type = "simple";
         User = cfg.user;
         Group = cfg.group;
-        ExecStart = "${cfg.package}/bin/forge";
+        ExecStart = "${cfg.package}/bin/forge server";
         Restart = "on-failure";
         RestartSec = "10s";
 
@@ -153,7 +153,7 @@ in
       };
     };
 
-    # Ensure Git is available for the service
-    environment.systemPackages = [ pkgs.git ];
+    # Ensure Git and forge CLI are available system-wide
+    environment.systemPackages = [ pkgs.git cfg.package ];
   };
 }

@@ -52,6 +52,14 @@ function renderJobItem(job: CIJob, cpuUsage: number | null, showCancel: boolean)
     `
     : '';
 
+  const restartButton = (job.status === 'failed' || job.status === 'canceled')
+    ? `
+      <button class="button" style="background: #17a2b8; padding: 5px 10px; font-size: 0.85em; margin-left: 5px;" onclick="restartJob(${job.id})">
+        Restart
+      </button>
+    `
+    : '';
+
   return `
     <li>
       <div class="mr-item">
@@ -71,6 +79,7 @@ function renderJobItem(job: CIJob, cpuUsage: number | null, showCancel: boolean)
         <div class="mr-status">
           ${statusBadge}
           ${cancelButton}
+          ${restartButton}
         </div>
       </div>
     </li>
@@ -173,6 +182,8 @@ export function renderJobsScript(): string {
   return `
     <script>
       function cancelJob(jobId) {
+        if (!confirm('Cancel job #' + jobId + '?')) return;
+
         fetch('/jobs/' + jobId + '/cancel', {
           method: 'POST',
           headers: {
@@ -184,12 +195,34 @@ export function renderJobsScript(): string {
           if (data.error) {
             alert('Cancel failed: ' + data.error);
           } else {
-            alert('Job canceled successfully');
             window.location.reload();
           }
         })
         .catch(err => {
           alert('Cancel failed: ' + err.message);
+        });
+      }
+
+      function restartJob(jobId) {
+        if (!confirm('Restart job #' + jobId + '?')) return;
+
+        fetch('/jobs/' + jobId + '/restart', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            alert('Restart failed: ' + data.error);
+          } else {
+            alert('Job restarted as #' + data.newJobId);
+            window.location.reload();
+          }
+        })
+        .catch(err => {
+          alert('Restart failed: ' + err.message);
         });
       }
     </script>

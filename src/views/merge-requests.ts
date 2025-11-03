@@ -57,7 +57,7 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
   `);
 }
 
-export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, latestJob: CIJob | null): string {
+export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, latestJob: CIJob | null, previewUrl?: string | null): string {
   const ciStatusBadge = renderCIStatusBadge(mr.ciStatus);
   const conflictsBadge = mr.hasConflicts
     ? '<span class="badge conflicts">conflicts</span>'
@@ -125,6 +125,14 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
     </div>
 
     ${ciAlert}
+
+    ${previewUrl ? `
+    <div style="margin: 20px 0;">
+      <strong>Preview Deployment</strong>
+      <p>This branch has a preview deployment available:</p>
+      <p><a href="${escapeHtml(previewUrl)}" target="_blank" style="font-weight: bold; font-size: 16px;">${escapeHtml(previewUrl)}</a></p>
+    </div>
+    ` : ''}
 
     <div style="margin: 20px 0;">
       ${mergeButton}
