@@ -25,6 +25,7 @@ dev:
     #!/usr/bin/env bash
     export NODE_ENV=development
     export DISABLE_AUTH=true
+    export FORGE_ALLOWED_PUBKEYS=npub1zxu639qym0esxnn7rzrt48wycmfhdu3e5yvzwx7ja3t84zyc2r8qz8cx2y
     export FORGE_DATA_DIR="./tmp/forge-dev"
     export FORGE_PORT=3030
     mkdir -p ./tmp/forge-dev

@@ -57,4 +57,5 @@ export interface ForgeConfig {
   workPath: string;
   domain?: string;
   isDevelopment: boolean;
+  trustProxy: boolean; // Trust X-Forwarded-For header (only enable behind trusted reverse proxy)
 }

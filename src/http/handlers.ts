@@ -20,20 +20,59 @@ import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
-// Store active challenges (in production, use Redis or similar)
-const activeChallenges = new Map<string, number>();
+// Store active challenges with IP binding and rate limiting
+interface ChallengeEntry {
+  issuedAt: number;
+  ip: string; // TCP connection address or forwarded IP
+}
+
+const activeChallenges = new Map<string, ChallengeEntry>();
+const CHALLENGE_MAX_AGE = 5 * 60 * 1000; // 5 minutes
+const CHALLENGE_RATE_LIMIT = 5; // per IP per minute
+const CHALLENGE_GLOBAL_LIMIT = 1000;
+
+// Get request IP - use direct connection address or trusted proxy headers
+function getRequestIP(req: Request, trustProxy: boolean, directIP?: string): string {
+  // If behind a trusted proxy, prefer forwarded headers for original client IP
+  if (trustProxy) {
+    const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0].trim();
+    if (forwarded) return forwarded;
+    
+    const realIp = req.headers.get('x-real-ip');
+    if (realIp) return realIp;
+  }
+  
+  // Fall back to direct connection IP (always trustworthy, from TCP connection)
+  // This is the remote address from Bun's server.requestIP(req)
+  if (directIP) return directIP;
+  
+  // Should never happen, but return a sentinel if we somehow have no IP
+  return 'unknown';
+}
+
+// Count challenges issued to an IP in the last minute
+function countRecentChallengesForIP(ip: string): number {
+  const oneMinuteAgo = Date.now() - 60 * 1000;
+  let count = 0;
+  for (const entry of activeChallenges.values()) {
+    if (entry.ip === ip && entry.issuedAt > oneMinuteAgo) {
+      count++;
+    }
+  }
+  return count;
+}
 
 // Clean up old challenges periodically
 setInterval(() => {
   const now = Date.now();
-  for (const [challenge, timestamp] of activeChallenges.entries()) {
-    if (now - timestamp > 5 * 60 * 1000) { // 5 minutes
+  for (const [challenge, entry] of activeChallenges.entries()) {
+    if (now - entry.issuedAt > CHALLENGE_MAX_AGE) {
       activeChallenges.delete(challenge);
     }
   }
 }, 60 * 1000); // Every minute
 
-export function createHandlers(config: ForgeConfig) {
+export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) => string) {
   return {
     getRoot: async (req: Request, params: Record<string, string>) => {
       const repos = listRepos(config.reposPath);
@@ -438,11 +477,28 @@ export function createHandlers(config: ForgeConfig) {
     },
 
     getAuthChallenge: async (req: Request, params: Record<string, string>) => {
+      const directIP = getDirectIP(req);
+      const ip = getRequestIP(req, config.trustProxy, directIP);
+      
+      // Check global limit (always enforced)
+      if (activeChallenges.size >= CHALLENGE_GLOBAL_LIMIT) {
+        return jsonError(503, 'Service temporarily unavailable. Too many active auth attempts.');
+      }
+      
+      // Check per-IP rate limit (always enforced with real client address)
+      const recentCount = countRecentChallengesForIP(ip);
+      if (recentCount >= CHALLENGE_RATE_LIMIT) {
+        return jsonError(429, 'Too many authentication attempts. Please wait a moment.');
+      }
+      
       // Generate random challenge
       const challenge = randomBytes(32).toString('hex');
       
-      // Store challenge with timestamp
-      activeChallenges.set(challenge, Date.now());
+      // Store challenge with timestamp and IP binding
+      activeChallenges.set(challenge, {
+        issuedAt: Date.now(),
+        ip,
+      });
       
       return jsonResponse({ challenge });
     },
@@ -457,8 +513,24 @@ export function createHandlers(config: ForgeConfig) {
         }
 
         // Verify challenge was issued by us
-        if (!activeChallenges.has(challenge)) {
+        const challengeEntry = activeChallenges.get(challenge);
+        if (!challengeEntry) {
           return jsonError(401, 'Invalid or expired challenge');
+        }
+
+        // Verify IP matches (always enforced - prevents challenge theft)
+        const directIP = getDirectIP(req);
+        const ip = getRequestIP(req, config.trustProxy, directIP);
+        if (challengeEntry.ip !== ip) {
+          activeChallenges.delete(challenge);
+          return jsonError(401, 'Challenge IP mismatch');
+        }
+
+        // Verify challenge age (defense in depth - should be caught by cleanup)
+        const age = Date.now() - challengeEntry.issuedAt;
+        if (age > CHALLENGE_MAX_AGE) {
+          activeChallenges.delete(challenge);
+          return jsonError(401, 'Challenge expired');
         }
 
         // Remove challenge (single use)
@@ -483,7 +555,7 @@ export function createHandlers(config: ForgeConfig) {
           message: 'Authentication successful'
         });
 
-        // Set cookie (HttpOnly, Secure in production, 1 year expiration)
+        // Set cookie (HttpOnly always, Secure unless in dev mode, 1 year expiration)
         const cookieOptions = [
           'HttpOnly',
           'Path=/',
@@ -491,8 +563,8 @@ export function createHandlers(config: ForgeConfig) {
           'SameSite=Lax',
         ];
 
-        // Only set Secure flag in production (not on localhost)
-        if (process.env.NODE_ENV === 'production') {
+        // Always set Secure flag unless in development mode
+        if (!config.isDevelopment) {
           cookieOptions.push('Secure');
         }
 

@@ -15,7 +15,17 @@ export function startServer(config: ForgeConfig): Server {
   initDatabase(config.dbPath);
 
   const router = createRouter();
-  const handlers = createHandlers(config);
+  
+  // We'll capture the Bun server instance to extract real client IPs
+  let bunServer: any = null;
+  const getDirectIP = (req: Request): string => {
+    if (!bunServer) return 'unknown';
+    // Use Bun's requestIP to get the actual TCP connection address
+    const ipData = bunServer.requestIP(req);
+    return ipData?.address || 'unknown';
+  };
+  
+  const handlers = createHandlers(config, getDirectIP);
 
   // Apply session middleware to protect routes
   const sessionMiddleware = createSessionMiddleware(config);
@@ -44,7 +54,7 @@ export function startServer(config: ForgeConfig): Server {
   router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
   router.post('/hooks/post-receive', handlers.postReceive);
 
-  const server = Bun.serve({
+  bunServer = Bun.serve({
     port: config.port,
     fetch(req) {
       const start = Date.now();
@@ -61,13 +71,13 @@ export function startServer(config: ForgeConfig): Server {
     },
   });
 
-  const actualPort = server.port;
+  const actualPort = bunServer.port;
   if (!actualPort) {
     throw new Error('Failed to bind server to port');
   }
 
   return {
     port: actualPort,
-    stop: () => server.stop(),
+    stop: () => bunServer.stop(),
   };
 }
