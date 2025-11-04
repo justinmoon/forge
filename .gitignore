@@ -1,4 +1,5 @@
 .helix
 node_modules
 tests/e2e/
+test-results/
 worktrees/

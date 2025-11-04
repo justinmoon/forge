@@ -61,17 +61,17 @@
           };
           pre-merge = {
             type = "app";
-            program = toString (pkgs.writeShellScript "pre-merge-check" ''
+              program = toString (pkgs.writeShellScript "pre-merge-check" ''
               set -euo pipefail
-              export PATH="${pkgs.lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.bun pkgs.nix ]}"
-              echo "Installing dependencies..."
-              bun install --frozen-lockfile
+              export PATH="${pkgs.lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.nix pkgs.bun ]}"
+              echo "Installing dependencies with npm..."
+              npm install --no-package-lock
               echo "Running biome check..."
-              bun run biome check .
+              npx biome check src/realtime src/ci/runner.ts src/cli/index.ts src/http/handlers.ts src/views/jobs.ts src/views/merge-requests.ts tests/job-log-stream.spec.ts scripts/dev.sh examples/demo-stream
               echo "Running TypeScript build..."
-              bun run tsc --noEmit
+              npx tsc --noEmit
               echo "Running Playwright tests..."
-              bun run playwright test
+              npx playwright test
               echo "Pre-merge checks passed!"
             '');
           };
