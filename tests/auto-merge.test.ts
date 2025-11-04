@@ -15,6 +15,31 @@ describe('Auto-merge with post-receive hook', () => {
   let bareRepoPath: string;
   let workRepoPath: string;
 
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  async function waitForJobStatus(
+    jobId: number,
+    acceptable: string[],
+    timeout = 5000,
+  ): Promise<string> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const job = getCIJob(jobId);
+      if (job && acceptable.includes(job.status)) {
+        return job.status;
+      }
+      await sleep(50);
+    }
+
+    const job = getCIJob(jobId);
+    throw new Error(
+      `Timed out waiting for job ${jobId} to reach [${acceptable.join(
+        ', ',
+      )}], last status: ${job?.status ?? 'unknown'}`,
+    );
+  }
+
   beforeAll(async () => {
     ctx = createTestContext();
     
@@ -58,15 +83,15 @@ describe('Auto-merge with post-receive hook', () => {
     expect(json.jobId).toBeGreaterThan(0);
     expect(json.autoMerge).toBe(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
+    const status = await waitForJobStatus(
+      json.jobId,
+      ['failed', 'canceled', 'passed'],
+    );
     const job = getCIJob(json.jobId);
     expect(job).toBeTruthy();
     expect(job?.repo).toBe('test-repo');
     expect(job?.branch).toBe('auto-feature');
-    if (job) {
-      expect(['pending', 'running', 'failed']).toContain(job.status);
-    }
+    expect(['pending', 'running', 'failed', 'canceled']).toContain(status);
   });
 
   test('post-receive cancels pending jobs for same branch on new push', async () => {
@@ -117,12 +142,13 @@ describe('Auto-merge with post-receive hook', () => {
     const second = await secondResponse.json() as any;
     expect(second.jobId).toBeGreaterThan(firstJobId);
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const firstStatus = await waitForJobStatus(firstJobId, [
+      'canceled',
+      'failed',
+    ]);
+    expect(['canceled', 'failed']).toContain(firstStatus);
 
-    const firstJob = getCIJob(firstJobId);
-    if (firstJob) {
-      expect(['canceled', 'failed']).toContain(firstJob.status);
-    }
+    await waitForJobStatus(second.jobId, ['failed', 'canceled', 'passed']);
   });
 
   test('post-receive handles branch deletion', async () => {

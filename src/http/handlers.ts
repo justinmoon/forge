@@ -31,13 +31,17 @@ import { getDiff, getMergeMetadata } from "../git/merge";
 import { executeMerge } from "../git/merge-execute";
 import { hasAutoMergeTrailer } from "../git/trailers";
 import {
+	type JobEventPayload,
+	createJobEventStream,
+} from "../realtime/job-events";
+import {
 	appendJobLogChunk,
 	completeJobLog,
 	ensureJobLog,
 	seedJobLog,
 	streamJobLog,
 } from "../realtime/log-stream";
-import type { ForgeConfig, MergeRequest } from "../types";
+import type { CIJob, ForgeConfig, MergeRequest } from "../types";
 import {
 	createRepository,
 	deleteRepository,
@@ -51,7 +55,12 @@ import {
 	renderJobsScript,
 } from "../views/jobs";
 import { renderLogin } from "../views/login";
-import { renderMRDetail, renderMRList } from "../views/merge-requests";
+import {
+	renderMRDetail,
+	renderMRDetailScript,
+	renderMRList,
+	renderMRListScript,
+} from "../views/merge-requests";
 import {
 	renderCreateRepoForm,
 	renderDeleteConfirmation,
@@ -147,6 +156,25 @@ function isNostrEvent(value: unknown): value is NostrEvent {
 		Array.isArray(value.tags) &&
 		value.tags.every(isStringArray)
 	);
+}
+
+function jobToSummary(job: CIJob): JobEventPayload {
+	return {
+		id: job.id,
+		repo: job.repo,
+		branch: job.branch,
+		headCommit: job.headCommit,
+		status: job.status,
+		exitCode: job.exitCode ?? null,
+		startedAt: job.startedAt.toISOString(),
+		finishedAt: job.finishedAt ? job.finishedAt.toISOString() : null,
+	};
+}
+
+function filterActiveJobs(jobs: CIJob[]): JobEventPayload[] {
+	return jobs
+		.filter((job) => job.status === "running" || job.status === "pending")
+		.map(jobToSummary);
 }
 
 export function createHandlers(
@@ -274,7 +302,12 @@ export function createHandlers(
 				}
 			}
 
-			return htmlResponse(renderMRList(repo, mrs));
+			const html = renderMRList(repo, mrs);
+			const withScript = html.replace(
+				"</body>",
+				`${renderMRListScript(repo)}</body>`,
+			);
+			return htmlResponse(withScript);
 		},
 
 		getMergeRequest: async (_req: Request, params: Record<string, string>) => {
@@ -318,9 +351,17 @@ export function createHandlers(
 				? `https://${preview.subdomain}.${config.domain || "forge.example.com"}`
 				: null;
 
-			return htmlResponse(
-				renderMRDetail(repo, mr, diff, latestJob, previewUrl),
+			const detailHtml = renderMRDetail(repo, mr, diff, latestJob, previewUrl);
+			const detailWithScripts = detailHtml.replace(
+				"</body>",
+				`${renderMRDetailScript(repo, decodedBranch, {
+					autoMerge,
+					hasConflicts: metadata.hasConflicts,
+					latestJob: latestJob ? jobToSummary(latestJob) : null,
+				})}</body>`,
 			);
+
+			return htmlResponse(detailWithScripts);
 		},
 
 		getHistory: async (_req: Request, params: Record<string, string>) => {
@@ -373,10 +414,12 @@ export function createHandlers(
 				}
 			}
 
+			const jobSummaries = jobs.map(jobToSummary);
+
 			const html = renderJobsDashboard(jobs, cpuUsages);
 			const withScript = html.replace(
 				"</body>",
-				`${renderJobsScript()}</body>`,
+				`${renderJobsScript(jobSummaries)}</body>`,
 			);
 
 			return htmlResponse(withScript);
@@ -426,6 +469,11 @@ export function createHandlers(
 
 			ensureJobLog(job.id, job.logPath);
 			return streamJobLog(job.id);
+		},
+
+		getJobEvents: async (_req: Request, _params: Record<string, string>) => {
+			const jobs = listCIJobs(200);
+			return createJobEventStream(filterActiveJobs(jobs));
 		},
 
 		postCancelJob: async (_req: Request, params: Record<string, string>) => {

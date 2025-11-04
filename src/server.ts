@@ -50,6 +50,7 @@ export function startServer(config: ForgeConfig): Server {
   router.get('/jobs', handlers.getJobs);
   router.get('/jobs/:jobId', handlers.getJobDetail);
   router.get('/jobs/:jobId/log-stream', handlers.getJobLogStream);
+  router.get('/events/jobs', handlers.getJobEvents);
   router.post('/r/:repo/mr/:branch/merge', handlers.postMerge);
   router.post('/r/:repo/mr/:branch/delete', handlers.postDeleteBranch);
   router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
