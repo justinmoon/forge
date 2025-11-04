@@ -10,6 +10,10 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        binPath = pkgs.lib.makeBinPath (
+          [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.nix pkgs.bun ]
+          ++ pkgs.lib.optional pkgs.stdenv.isLinux pkgs.chromium
+        );
         
         forge = pkgs.stdenv.mkDerivation {
           pname = "forge";
@@ -61,10 +65,26 @@
           };
           pre-merge = {
             type = "app";
-            program = toString (pkgs.writeShellScript "pre-merge-check" ''
-              set -e
-              echo "Running pre-merge checks..."
-              ${pkgs.nix}/bin/nix flake check
+              program = toString (pkgs.writeShellScript "pre-merge-check" ''
+              set -euo pipefail
+              export PATH="${binPath}"
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+                export PLAYWRIGHT_BROWSERS_PATH=0
+                export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${pkgs.chromium}/bin/chromium"
+              ''}
+              echo "Installing dependencies with npm..."
+              npm install --include=dev --no-package-lock
+              ${pkgs.lib.optionalString (!pkgs.stdenv.isLinux) ''
+              echo "Installing Playwright browsers..."
+              npx playwright install chromium
+              ''}
+              echo "Running biome check..."
+              npx @biomejs/biome check src/realtime src/ci/runner.ts src/cli/index.ts src/http/handlers.ts src/views/jobs.ts src/views/merge-requests.ts tests/job-log-stream.spec.ts scripts/dev.sh examples/demo-stream
+              echo "Running TypeScript build..."
+              npx tsc --noEmit
+              echo "Running Playwright tests..."
+              npx playwright test
               echo "Pre-merge checks passed!"
             '');
           };

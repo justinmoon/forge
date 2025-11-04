@@ -1,66 +1,77 @@
-import { layout, escapeHtml } from './layout';
-import type { CIJob } from '../types';
-import AnsiToHtml from 'ansi-to-html';
+import { seedJobLog } from "../realtime/log-stream";
+import type { CIJob } from "../types";
+import { escapeHtml, layout } from "./layout";
 
 export function renderJobsDashboard(
-  jobs: CIJob[],
-  cpuUsages: Map<number, number | null>
+	jobs: CIJob[],
+	cpuUsages: Map<number, number | null>,
 ): string {
-  const runningJobs = jobs.filter((j) => j.status === 'running');
-  const historicalJobs = jobs.filter((j) => j.status !== 'running');
+	const runningJobs = jobs.filter((j) => j.status === "running");
+	const historicalJobs = jobs.filter((j) => j.status !== "running");
 
-  const runningSection = runningJobs.length > 0
-    ? `
+	const runningSection =
+		runningJobs.length > 0
+			? `
     <h3>Running Jobs</h3>
     <ul class="mr-list">
-      ${runningJobs.map((job) => renderJobItem(job, cpuUsages.get(job.id) || null, true)).join('')}
+      ${runningJobs.map((job) => renderJobItem(job, cpuUsages.get(job.id) || null, true)).join("")}
     </ul>
   `
-    : '<p>No jobs currently running.</p>';
+			: "<p>No jobs currently running.</p>";
 
-  const historicalSection = historicalJobs.length > 0
-    ? `
+	const historicalSection =
+		historicalJobs.length > 0
+			? `
     <h3>Recent Jobs (Latest 100)</h3>
     <ul class="mr-list">
-      ${historicalJobs.map((job) => renderJobItem(job, null, false)).join('')}
+      ${historicalJobs.map((job) => renderJobItem(job, null, false)).join("")}
     </ul>
   `
-    : '';
+			: "";
 
-  return layout('CI Jobs', `
+	return layout(
+		"CI Jobs",
+		`
     <h2>CI Jobs</h2>
     ${runningSection}
     ${historicalSection}
-  `);
+  `,
+	);
 }
 
-function renderJobItem(job: CIJob, cpuUsage: number | null, showCancel: boolean): string {
-  const statusBadge = getStatusBadge(job.status);
-  const duration = job.finishedAt
-    ? Math.round((job.finishedAt.getTime() - job.startedAt.getTime()) / 1000)
-    : Math.round((Date.now() - job.startedAt.getTime()) / 1000);
+function renderJobItem(
+	job: CIJob,
+	cpuUsage: number | null,
+	showCancel: boolean,
+): string {
+	const statusBadge = getStatusBadge(job.status);
+	const duration = job.finishedAt
+		? Math.round((job.finishedAt.getTime() - job.startedAt.getTime()) / 1000)
+		: Math.round((Date.now() - job.startedAt.getTime()) / 1000);
 
-  const cpuDisplay = cpuUsage !== null
-    ? `<span class="stats">CPU: ${cpuUsage.toFixed(1)}%</span>`
-    : '';
+	const cpuDisplay =
+		cpuUsage !== null
+			? `<span class="stats">CPU: ${cpuUsage.toFixed(1)}%</span>`
+			: "";
 
-  const cancelButton = showCancel
-    ? `
+	const cancelButton = showCancel
+		? `
       <button class="button" style="background: #dc3545; padding: 5px 10px; font-size: 0.85em;" onclick="cancelJob(${job.id})">
         Cancel
       </button>
     `
-    : '';
+		: "";
 
-  const restartButton = (job.status === 'failed' || job.status === 'canceled')
-    ? `
+	const restartButton =
+		job.status === "failed" || job.status === "canceled"
+			? `
       <button class="button" style="background: #17a2b8; padding: 5px 10px; font-size: 0.85em; margin-left: 5px;" onclick="restartJob(${job.id})">
         Restart
       </button>
     `
-    : '';
+			: "";
 
-  return `
+	return `
     <li>
       <div class="mr-item">
         <div class="mr-info">
@@ -72,7 +83,7 @@ function renderJobItem(job: CIJob, cpuUsage: number | null, showCancel: boolean)
           <div class="stats">
             Commit: <code>${escapeHtml(job.headCommit.slice(0, 8))}</code> &nbsp;|&nbsp;
             Duration: ${duration}s
-            ${job.exitCode !== null ? ` &nbsp;|&nbsp; Exit: ${job.exitCode}` : ''}
+            ${job.exitCode !== null ? ` &nbsp;|&nbsp; Exit: ${job.exitCode}` : ""}
           </div>
           ${cpuDisplay}
         </div>
@@ -87,64 +98,65 @@ function renderJobItem(job: CIJob, cpuUsage: number | null, showCancel: boolean)
 }
 
 function getStatusBadge(status: string): string {
-  const badges: Record<string, string> = {
-    'pending': '<span class="badge">pending</span>',
-    'running': '<span class="badge running">running</span>',
-    'passed': '<span class="badge passed">passed</span>',
-    'failed': '<span class="badge failed">failed</span>',
-    'canceled': '<span class="badge">canceled</span>',
-  };
-  return badges[status] || '<span class="badge">unknown</span>';
+	const badges: Record<string, string> = {
+		pending: '<span class="badge">pending</span>',
+		running: '<span class="badge running">running</span>',
+		passed: '<span class="badge passed">passed</span>',
+		failed: '<span class="badge failed">failed</span>',
+		canceled: '<span class="badge">canceled</span>',
+	};
+	return badges[status] || '<span class="badge">unknown</span>';
 }
 
 export function renderJobDetail(
-  job: CIJob,
-  logContent: string | null,
-  logDeleted: boolean,
-  cpuUsage: number | null
+	job: CIJob,
+	logContent: string | null,
+	logDeleted: boolean,
+	cpuUsage: number | null,
 ): string {
-  const statusBadge = getStatusBadge(job.status);
-  const duration = job.finishedAt
-    ? Math.round((job.finishedAt.getTime() - job.startedAt.getTime()) / 1000)
-    : Math.round((Date.now() - job.startedAt.getTime()) / 1000);
+	const statusBadge = getStatusBadge(job.status);
+	const duration = job.finishedAt
+		? Math.round((job.finishedAt.getTime() - job.startedAt.getTime()) / 1000)
+		: Math.round((Date.now() - job.startedAt.getTime()) / 1000);
 
-  const refreshButton = job.status === 'running'
-    ? `<button class="button" onclick="window.location.reload()" style="background: #28a745; margin-left: 10px;">Refresh</button>`
-    : '';
+	const cpuDisplay =
+		cpuUsage !== null
+			? `<div class="stats">CPU Usage: ${cpuUsage.toFixed(1)}%</div>`
+			: "";
 
-  const cpuDisplay = cpuUsage !== null
-    ? `<div class="stats">CPU Usage: ${cpuUsage.toFixed(1)}%</div>`
-    : '';
+	let logSection = "";
+	const shouldStream = job.status === "running";
 
-  let logSection = '';
-  if (logDeleted) {
-    logSection = `
+	if (logDeleted) {
+		logSection = `
       <div class="alert warning">
         <strong>Log deleted</strong>
         <p>This log file has been pruned or does not exist.</p>
       </div>
     `;
-  } else if (logContent) {
-    // Convert ANSI codes to HTML server-side
-    const convert = new AnsiToHtml({
-      fg: '#d4d4d4',
-      bg: '#1e1e1e',
-      newline: true,
-      escapeXML: true,
-    });
-    const logHtml = convert.toHtml(logContent);
-    
-    logSection = `
+	} else if (logContent) {
+		const logHtml = seedJobLog(job.id, logContent);
+		logSection = `
       <h3>Build Log</h3>
-      <div class="log-container">
-        <pre>${logHtml}</pre>
+      <div id="job-log-root" class="log-container">
+        <pre id="job-log-pre">${logHtml}</pre>
       </div>
+      ${shouldStream ? renderLogStreamScript(job.id) : ""}
     `;
-  } else {
-    logSection = '<p>No log content available.</p>';
-  }
+	} else {
+		seedJobLog(job.id, "");
+		logSection = `
+      <h3>Build Log</h3>
+      <div id="job-log-root" class="log-container">
+        <pre id="job-log-pre">&#8203;</pre>
+      </div>
+      ${shouldStream ? renderLogStreamScript(job.id) : ""}
+    `;
+	}
 
-  return layout(`Job #${job.id}`, `
+	return layout(
+		`Job #${job.id}`,
+		`
     <h2><a href="/jobs">&larr;</a> Job #${job.id}</h2>
     
     <div style="background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 5px; padding: 15px; margin: 20px 0;">
@@ -157,11 +169,11 @@ export function renderJobDetail(
       </div>
       <div style="margin-bottom: 10px;">
         <strong>Status:</strong> ${statusBadge}
-        ${job.exitCode !== null ? ` <strong>Exit Code:</strong> ${job.exitCode}` : ''}
+        ${job.exitCode !== null ? ` <strong>Exit Code:</strong> ${job.exitCode}` : ""}
       </div>
       <div style="margin-bottom: 10px;">
         <strong>Started:</strong> ${job.startedAt.toLocaleString()}
-        ${job.finishedAt ? ` &nbsp;|&nbsp; <strong>Finished:</strong> ${job.finishedAt.toLocaleString()}` : ''}
+        ${job.finishedAt ? ` &nbsp;|&nbsp; <strong>Finished:</strong> ${job.finishedAt.toLocaleString()}` : ""}
       </div>
       <div style="margin-bottom: 10px;">
         <strong>Duration:</strong> ${duration}s
@@ -171,15 +183,37 @@ export function renderJobDetail(
 
     <div style="margin: 20px 0;">
       <a href="/jobs" class="button">Back to Jobs</a>
-      ${refreshButton}
     </div>
 
     ${logSection}
-  `);
+  `,
+	);
+}
+
+function renderLogStreamScript(jobId: number): string {
+	const streamUrl = `/jobs/${jobId}/log-stream`;
+	return `
+    <script>
+      (() => {
+        const source = new EventSource('${streamUrl}');
+        source.addEventListener('log', (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            const target = document.querySelector('#job-log-pre');
+            if (target) {
+              target.innerHTML = payload.html || '\u200b';
+            }
+          } catch (_) {
+            // Ignore malformed events; the stream will retry automatically.
+          }
+        });
+      })();
+    </script>
+  `;
 }
 
 export function renderJobsScript(): string {
-  return `
+	return `
     <script>
       function cancelJob(jobId) {
         if (!confirm('Cancel job #' + jobId + '?')) return;
