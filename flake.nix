@@ -64,6 +64,9 @@
               program = toString (pkgs.writeShellScript "pre-merge-check" ''
               set -euo pipefail
               export PATH="${pkgs.lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.nix pkgs.bun ]}"
+              export TMPDIR="''${TMPDIR:-/tmp}"
+              cache_dir="$(mktemp -d "''${TMPDIR}/playwright-browsers.XXXXXX")"
+              export PLAYWRIGHT_BROWSERS_PATH="$cache_dir"
               echo "Installing dependencies with npm..."
               npm install --include=dev --no-package-lock
               echo "Installing Playwright browsers..."
@@ -75,6 +78,7 @@
               echo "Running Playwright tests..."
               npx playwright test
               echo "Pre-merge checks passed!"
+              rm -rf "$PLAYWRIGHT_BROWSERS_PATH"
             '');
           };
           post-merge = {
