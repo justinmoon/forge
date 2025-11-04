@@ -62,9 +62,16 @@
           pre-merge = {
             type = "app";
             program = toString (pkgs.writeShellScript "pre-merge-check" ''
-              set -e
-              echo "Running pre-merge checks..."
-              ${pkgs.nix}/bin/nix flake check
+              set -euo pipefail
+              export PATH="${pkgs.lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.bun pkgs.nix ]}"
+              echo "Installing dependencies..."
+              bun install --frozen-lockfile
+              echo "Running biome check..."
+              bun run biome check .
+              echo "Running TypeScript build..."
+              bun run tsc --noEmit
+              echo "Running Playwright tests..."
+              bun run playwright test
               echo "Pre-merge checks passed!"
             '');
           };
