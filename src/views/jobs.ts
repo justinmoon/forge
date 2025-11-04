@@ -2,32 +2,46 @@ import { seedJobLog } from "../realtime/log-stream";
 import type { CIJob } from "../types";
 import { escapeHtml, layout } from "./layout";
 
+interface JobSummary {
+	id: number;
+	repo: string;
+	branch: string;
+	headCommit: string;
+	status: string;
+	exitCode: number | null;
+	startedAt: string;
+	finishedAt: string | null;
+}
+
 export function renderJobsDashboard(
 	jobs: CIJob[],
 	cpuUsages: Map<number, number | null>,
 ): string {
-	const runningJobs = jobs.filter((j) => j.status === "running");
-	const historicalJobs = jobs.filter((j) => j.status !== "running");
+	const runningJobs = jobs.filter(
+		(j) => j.status === "running" || j.status === "pending",
+	);
+	const historicalJobs = jobs.filter(
+		(j) => j.status !== "running" && j.status !== "pending",
+	);
 
-	const runningSection =
-		runningJobs.length > 0
-			? `
-    <h3>Running Jobs</h3>
-    <ul class="mr-list">
-      ${runningJobs.map((job) => renderJobItem(job, cpuUsages.get(job.id) || null, true)).join("")}
-    </ul>
-  `
-			: "<p>No jobs currently running.</p>";
+	const runningSection = `
+	<section data-running-section>
+	  <h3>Running Jobs</h3>
+	  <p class="jobs-empty${runningJobs.length ? " hidden" : ""}" data-running-empty>No jobs currently active.</p>
+	  <ul class="mr-list" data-job-list="running">
+	    ${runningJobs
+				.map((job) => renderJobItem(job, cpuUsages.get(job.id) || null, true))
+				.join("")}
+	  </ul>
+	</section>`;
 
-	const historicalSection =
-		historicalJobs.length > 0
-			? `
-    <h3>Recent Jobs (Latest 100)</h3>
-    <ul class="mr-list">
-      ${historicalJobs.map((job) => renderJobItem(job, null, false)).join("")}
-    </ul>
-  `
-			: "";
+	const historicalSection = `
+	<section data-history-section class="${historicalJobs.length ? "" : "hidden"}">
+	  <h3>Recent Jobs (Latest 100)</h3>
+	  <ul class="mr-list" data-job-list="history">
+	    ${historicalJobs.map((job) => renderJobItem(job, null, false)).join("")}
+	  </ul>
+	</section>`;
 
 	return layout(
 		"CI Jobs",
@@ -72,8 +86,17 @@ function renderJobItem(
 			: "";
 
 	return `
-    <li>
-      <div class="mr-item">
+    <li
+      data-job-id="${job.id}"
+      data-job-status="${job.status}"
+      data-job-repo="${escapeHtml(job.repo)}"
+      data-job-branch="${escapeHtml(job.branch)}"
+      data-job-head="${escapeHtml(job.headCommit)}"
+      data-job-started="${job.startedAt.toISOString()}"
+      ${job.finishedAt ? `data-job-finished="${job.finishedAt.toISOString()}"` : ""}
+      ${job.exitCode !== null && job.exitCode !== undefined ? `data-job-exit="${job.exitCode}"` : ""}
+    >
+      <div class="mr-item${job.status === "running" || job.status === "pending" ? " is-active" : ""}">
         <div class="mr-info">
           <h3>
             <a href="/jobs/${job.id}">
@@ -212,9 +235,132 @@ function renderLogStreamScript(jobId: number): string {
   `;
 }
 
-export function renderJobsScript(): string {
+export function renderJobsScript(initialJobs: JobSummary[]): string {
+	const jobsJson = JSON.stringify(initialJobs);
 	return `
     <script>
+      const FORGE_INITIAL_JOBS = ${jobsJson};
+      const jobState = new Map(FORGE_INITIAL_JOBS.map((job) => [job.id, job]));
+
+      const runningList = document.querySelector('[data-job-list="running"]');
+      const runningEmpty = document.querySelector('[data-running-empty]');
+      const historyList = document.querySelector('[data-job-list="history"]');
+      const historySection = document.querySelector('[data-history-section]');
+
+      const isActiveStatus = (status) => status === 'running' || status === 'pending';
+
+      const escapeHtml = (value) => String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+      const renderBadge = (status) => {
+        const labels = {
+          pending: 'Pending',
+          running: 'Running',
+          passed: 'Passed',
+          failed: 'Failed',
+          canceled: 'Canceled'
+        };
+        const classes = {
+          pending: 'badge',
+          running: 'badge running',
+          passed: 'badge passed',
+          failed: 'badge failed',
+          canceled: 'badge'
+        };
+        const label = labels[status] || status;
+        return '<span class="' + (classes[status] || 'badge') + '">' + label + '</span>';
+      };
+
+      const formatDuration = (job) => {
+        const start = Number(new Date(job.startedAt));
+        const end = job.finishedAt ? Number(new Date(job.finishedAt)) : Date.now();
+        const seconds = Math.max(1, Math.round((end - start) / 1000));
+        return seconds + 's';
+      };
+
+      const renderJobItem = (job) => {
+        const status = job.status;
+        const exitInfo = job.exitCode !== null && job.exitCode !== undefined
+          ? ' &nbsp;|&nbsp; Exit: ' + job.exitCode
+          : '';
+        const cancelButton = status === 'running'
+          ? '<button class="button" style="background: #dc3545; padding: 5px 10px; font-size: 0.85em;" onclick="cancelJob(' + job.id + ')">Cancel</button>'
+          : '';
+        const restartButton = status === 'failed' || status === 'canceled'
+          ? '<button class="button" style="background: #17a2b8; padding: 5px 10px; font-size: 0.85em; margin-left: 5px;" onclick="restartJob(' + job.id + ')">Restart</button>'
+          : '';
+
+        return (
+          '<li data-job-id="' + job.id + '" data-job-status="' + status + '">' +
+            '<div class="mr-item' + (isActiveStatus(status) ? ' is-active' : '') + '">' +
+              '<div class="mr-info">' +
+                '<h3><a href="/jobs/' + job.id + '">Job #' + job.id + ': ' + escapeHtml(job.repo) + '/' + escapeHtml(job.branch) + '</a></h3>' +
+                '<div class="stats">Commit: <code>' + escapeHtml(job.headCommit.slice(0, 8)) + '</code> &nbsp;|&nbsp; Duration: ' + formatDuration(job) + exitInfo + '</div>' +
+              '</div>' +
+              '<div class="mr-status">' +
+                renderBadge(status) +
+                cancelButton +
+                restartButton +
+              '</div>' +
+            '</div>' +
+          '</li>'
+        );
+      };
+
+      function renderJobLists() {
+        if (!runningList || !historyList) return;
+
+        const jobs = Array.from(jobState.values());
+        const running = jobs
+          .filter((job) => isActiveStatus(job.status))
+          .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+        const historical = jobs
+          .filter((job) => !isActiveStatus(job.status))
+          .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+
+        runningList.innerHTML = running.map(renderJobItem).join('');
+        if (runningEmpty) {
+          runningEmpty.classList.toggle('hidden', running.length > 0);
+        }
+
+        historyList.innerHTML = historical.map(renderJobItem).join('');
+        if (historySection) {
+          historySection.classList.toggle('hidden', historical.length === 0);
+        }
+      }
+
+      const trimHistory = () => {
+        if (jobState.size <= 200) return;
+        const entries = Array.from(jobState.values())
+          .filter((job) => !isActiveStatus(job.status))
+          .sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
+        while (entries.length && jobState.size > 200) {
+          const oldest = entries.shift();
+          if (oldest) {
+            jobState.delete(oldest.id);
+          }
+        }
+      };
+
+      window.addEventListener('forge:job-update', (event) => {
+        const { type, payload } = event.detail;
+        if (type === 'snapshot') {
+          for (const job of payload) {
+            jobState.set(job.id, job);
+          }
+        } else if (type === 'job') {
+          jobState.set(payload.id, payload);
+        }
+        trimHistory();
+        renderJobLists();
+      });
+
+      setInterval(renderJobLists, 15000);
+
       function cancelJob(jobId) {
         if (!confirm('Cancel job #' + jobId + '?')) return;
 
@@ -259,6 +405,8 @@ export function renderJobsScript(): string {
           alert('Restart failed: ' + err.message);
         });
       }
+
+      renderJobLists();
     </script>
   `;
 }

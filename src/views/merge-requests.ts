@@ -4,6 +4,17 @@ import { renderDiff } from "./diff";
 import { renderDiffScripts } from "./diff-scripts";
 import { escapeHtml, layout } from "./layout";
 
+interface JobSummary {
+	id: number;
+	repo: string;
+	branch: string;
+	headCommit: string;
+	status: string;
+	exitCode: number | null;
+	startedAt: string;
+	finishedAt: string | null;
+}
+
 export function renderMRList(repo: string, mrs: MergeRequest[]): string {
 	if (mrs.length === 0) {
 		return layout(
@@ -27,9 +38,11 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
 				: '<span class="badge clean">clean</span>';
 
 			const branchSlug = encodeURIComponent(mr.branch);
+			const branchKey = encodeURIComponent(mr.branch);
+			const activeClass = mr.ciStatus === "running" ? " is-active" : "";
 			return `
-      <li>
-        <div class="mr-item">
+      <li data-branch="${branchKey}">
+        <div class="mr-item${activeClass}" data-ci-item>
           <div class="mr-info">
             <h3><a href="/r/${escapeHtml(repo)}/mr/${branchSlug}">${escapeHtml(mr.branch)}</a></h3>
             <div class="stats">
@@ -38,7 +51,7 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
             </div>
           </div>
           <div class="mr-status">
-            ${ciStatusBadge}
+            <span data-ci-status>${ciStatusBadge}</span>
             ${conflictsBadge}
             ${mr.autoMerge ? '<span class="badge">auto-merge</span>' : ""}
           </div>
@@ -57,11 +70,208 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
       <a href="/r/${escapeHtml(repo)}/delete" style="color: #c62828;">Delete repository</a>
     </p>
     <h3>Active Merge Requests</h3>
-    <ul class="mr-list">
+    <ul class="mr-list" data-mr-list>
       ${mrItems}
     </ul>
   `,
 	);
+}
+
+export function renderMRListScript(repo: string): string {
+	const repoJson = JSON.stringify(repo);
+	return `
+    <script>
+      (function() {
+        const repo = ${repoJson};
+        const list = document.querySelector('[data-mr-list]');
+        if (!list) return;
+
+        const renderBadge = (status) => {
+          const labels = {
+            pending: 'CI pending',
+            running: 'CI running',
+            passed: 'CI passed',
+            failed: 'CI failed',
+            canceled: 'CI canceled'
+          };
+          const classes = {
+            pending: 'badge',
+            running: 'badge running',
+            passed: 'badge passed',
+            failed: 'badge failed',
+            canceled: 'badge'
+          };
+          const label = labels[status] || status;
+          return '<span class="' + (classes[status] || 'badge') + '">' + label + '</span>';
+        };
+
+        const isActive = (status) => status === 'running' || status === 'pending';
+
+        const applyUpdate = (job) => {
+          if (job.repo !== repo) return;
+          const key = encodeURIComponent(job.branch);
+          const item = list.querySelector('[data-branch="' + key + '"]');
+          if (!item) return;
+
+          const statusEl = item.querySelector('[data-ci-status]');
+          if (statusEl) {
+            statusEl.innerHTML = renderBadge(job.status);
+          }
+
+          const container = item.querySelector('[data-ci-item]');
+          if (container) {
+            container.classList.toggle('is-active', isActive(job.status));
+          }
+        };
+
+        window.addEventListener('forge:job-update', (event) => {
+          const { type, payload } = event.detail;
+          if (type === 'snapshot') {
+            for (const job of payload) applyUpdate(job);
+          } else {
+            applyUpdate(payload);
+          }
+        });
+      })();
+    </script>
+  `;
+}
+
+export function renderMRDetailScript(
+	repo: string,
+	branch: string,
+	options: {
+		autoMerge: boolean;
+		hasConflicts: boolean;
+		latestJob: JobSummary | null;
+	},
+): string {
+	const repoJson = JSON.stringify(repo);
+	const branchJson = JSON.stringify(branch);
+	const autoMergeFlag = options.autoMerge ? "true" : "false";
+	const conflictsFlag = options.hasConflicts ? "true" : "false";
+	const latestJobJson = JSON.stringify(options.latestJob);
+	const conflictAlert = JSON.stringify(
+		options.hasConflicts
+			? '<div class="alert warning"><strong>Merge conflicts detected</strong><p>This branch has conflicts with master. Resolve conflicts before merging.</p></div>'
+			: "",
+	);
+	return `
+    <script>
+      (function() {
+        const repo = ${repoJson};
+        const branch = ${branchJson};
+        const autoMerge = ${autoMergeFlag};
+        const hasConflicts = ${conflictsFlag};
+        const conflictAlert = ${conflictAlert};
+        const initialJob = ${latestJobJson};
+
+        const statusEl = document.querySelector('[data-ci-status]');
+        const jobLinkEl = document.querySelector('[data-ci-job-link]');
+        const mergeButtonEl = document.querySelector('[data-merge-button]');
+        const alertContainer = document.querySelector('[data-ci-alert]');
+
+        const renderBadge = (status) => {
+          const labels = {
+            pending: 'CI pending',
+            running: 'CI running',
+            passed: 'CI passed',
+            failed: 'CI failed',
+            canceled: 'CI canceled'
+          };
+          const classes = {
+            pending: 'badge',
+            running: 'badge running',
+            passed: 'badge passed',
+            failed: 'badge failed',
+            canceled: 'badge'
+          };
+          const label = labels[status] || status;
+          return '<span class="' + (classes[status] || 'badge') + '">' + label + '</span>';
+        };
+
+        const renderAlert = (status) => {
+          if (status === 'running') {
+            return '<div class="alert info"><strong>CI is running...</strong><p>Updates stream live on this page.</p></div>' + conflictAlert;
+          }
+          if (status === 'pending') {
+            return '<div class="alert info"><strong>CI queued</strong><p>Job is waiting for runners.</p></div>' + conflictAlert;
+          }
+          if (status === 'failed') {
+            return '<div class="alert warning"><strong>CI failed</strong><p>Review the logs to resolve issues before merging.</p></div>' + conflictAlert;
+          }
+          if (status === 'canceled') {
+            return '<div class="alert warning"><strong>CI canceled</strong><p>The most recent job was canceled.</p></div>' + conflictAlert;
+          }
+          if (status === 'passed') {
+            if (autoMerge && !hasConflicts) {
+              return '<div class="alert info"><strong>CI passed</strong><p>Auto-merge will finalize shortly.</p></div>' + conflictAlert;
+            }
+            return '<div class="alert info"><strong>CI passed</strong><p>All checks succeeded.</p></div>' + conflictAlert;
+          }
+          return conflictAlert;
+        };
+
+        const updateMergeButton = (status) => {
+          if (!mergeButtonEl) return;
+          if (status === 'passed' && !hasConflicts) {
+            if (autoMerge) {
+              mergeButtonEl.disabled = true;
+              mergeButtonEl.textContent = 'Merge (auto-merge enabled)';
+            } else {
+              mergeButtonEl.disabled = false;
+              mergeButtonEl.textContent = 'Merge to master';
+            }
+          } else {
+            mergeButtonEl.disabled = true;
+            mergeButtonEl.textContent = 'Merge (waiting for CI)';
+          }
+        };
+
+        const updateJobLink = (job) => {
+          if (!jobLinkEl) return;
+          jobLinkEl.href = '/jobs/' + job.id;
+          jobLinkEl.textContent = 'View CI logs (#' + job.id + ')';
+          jobLinkEl.classList.remove('hidden');
+        };
+
+        let autoMergeNotified = false;
+
+        const applyJob = (job) => {
+          if (job.repo !== repo || job.branch !== branch) return;
+
+          if (statusEl) {
+            statusEl.innerHTML = renderBadge(job.status);
+          }
+
+          updateJobLink(job);
+          updateMergeButton(job.status);
+
+          if (alertContainer) {
+            alertContainer.innerHTML = renderAlert(job.status);
+          }
+
+          if (autoMerge && job.status === 'passed' && !hasConflicts && !autoMergeNotified) {
+            autoMergeNotified = true;
+            setTimeout(() => window.location.reload(), 2000);
+          }
+        };
+
+        if (initialJob) {
+          applyJob(initialJob);
+        }
+
+        window.addEventListener('forge:job-update', (event) => {
+          const { type, payload } = event.detail;
+          if (type === 'snapshot') {
+            for (const job of payload) applyJob(job);
+          } else {
+            applyJob(payload);
+          }
+        });
+      })();
+    </script>
+  `;
 }
 
 export function renderMRDetail(
@@ -78,12 +288,15 @@ export function renderMRDetail(
 
 	const mergeDisabled = mr.ciStatus !== "passed" || mr.hasConflicts;
 	const mergeButton = mergeDisabled
-		? `<button class="button" disabled>Merge (waiting for CI)</button>`
-		: `<button class="button" onclick="handleMerge()">Merge to master</button>`;
+		? `<button class="button" data-merge-button disabled>Merge (waiting for CI)</button>`
+		: `<button class="button" data-merge-button onclick="handleMerge()">Merge to master</button>`;
 
-	const jobLink = latestJob
-		? `<a href="/jobs/${latestJob.id}" style="margin-left: 15px;">View CI logs</a>`
-		: "";
+	const jobLinkHref = latestJob ? `/jobs/${latestJob.id}` : "#";
+	const jobLinkLabel = latestJob
+		? `View CI logs (#${latestJob.id})`
+		: "View CI logs";
+	const jobLinkClass = latestJob ? "" : " hidden";
+	const jobLink = `<a href="${jobLinkHref}" data-ci-job-link class="job-log-link${jobLinkClass}" style="margin-left: 15px;">${escapeHtml(jobLinkLabel)}</a>`;
 
 	let ciAlert = "";
 	if (mr.ciStatus === "not-configured") {
@@ -128,14 +341,16 @@ export function renderMRDetail(
       ${mr.aheadCount} ahead, ${mr.behindCount} behind
     </div>
 
-    <div style="margin: 20px 0;">
-      <strong>CI Status:</strong> ${ciStatusBadge} &nbsp;
-      <strong>Conflicts:</strong> ${conflictsBadge}
-      ${mr.autoMerge ? '<span class="badge">auto-merge enabled</span>' : ""}
+    <div style="margin: 20px 0;" data-ci-summary>
+      <strong>CI Status:</strong> <span data-ci-status>${ciStatusBadge}</span> &nbsp;
+      <strong>Conflicts:</strong> <span data-ci-conflicts>${conflictsBadge}</span>
+      ${mr.autoMerge ? '<span class="badge" data-auto-merge>auto-merge enabled</span>' : ""}
       ${jobLink}
     </div>
 
-    ${ciAlert}
+    <div data-ci-alert>
+      ${ciAlert}
+    </div>
 
     ${
 			previewUrl

@@ -37,6 +37,11 @@ export function layout(title: string, body: string): string {
       background: #f9f9f9;
     }
     .mr-item { display: flex; justify-content: space-between; align-items: center; }
+    .mr-item.is-active {
+      border-left: 4px solid #0ea5e9;
+      padding-left: 12px;
+      background: #f0f9ff;
+    }
     .mr-info { flex: 1; }
     .mr-status { margin-left: 20px; text-align: right; }
     .badge {
@@ -83,6 +88,7 @@ export function layout(title: string, body: string): string {
       background: #ccc;
       cursor: not-allowed;
     }
+    .hidden { display: none !important; }
     .alert {
       padding: 15px;
       margin: 20px 0;
@@ -338,6 +344,61 @@ export function layout(title: string, body: string): string {
     .diff-file.collapsed .diff-content {
       display: none;
     }
+    .job-tray {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      max-width: 320px;
+      background: #111827;
+      color: #f9fafb;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+      padding: 16px 18px;
+      z-index: 9999;
+      font-size: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .job-tray.hidden {
+      display: none;
+    }
+    .job-tray h4 {
+      margin-bottom: 10px;
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+    .job-tray-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .job-tray-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(148, 163, 184, 0.08);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+    .job-tray-item a {
+      color: #e2e8f0;
+      font-weight: 600;
+    }
+    .job-tray-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #cbd5f5;
+      font-size: 12px;
+    }
+    .job-tray-status .badge {
+      margin-left: 0;
+    }
   </style>
 </head>
 <body>
@@ -356,6 +417,114 @@ export function layout(title: string, body: string): string {
   <main>
     ${body}
   </main>
+  <div id="job-tray" class="job-tray hidden" role="region" aria-live="polite"></div>
+  <script>
+    (() => {
+      function dispatch(type, payload) {
+        window.dispatchEvent(new CustomEvent('forge:job-update', { detail: { type, payload } }));
+      }
+
+      try {
+        const source = new EventSource('/events/jobs');
+        source.addEventListener('snapshot', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            dispatch('snapshot', Array.isArray(data.jobs) ? data.jobs : []);
+          } catch (error) {
+            console.error('Failed to parse job snapshot', error);
+          }
+        });
+        source.addEventListener('job', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            dispatch('job', data);
+          } catch (error) {
+            console.error('Failed to parse job event', error);
+          }
+        });
+        source.onerror = () => {
+          console.warn('Job events connection lost, waiting for retry...');
+        };
+      } catch (error) {
+        console.error('Failed to open job events stream', error);
+      }
+
+      const jobTray = document.getElementById('job-tray');
+      if (!jobTray) return;
+
+      const activeJobs = new Map();
+      const isActive = (status) => status === 'running' || status === 'pending';
+
+      const renderBadge = (status) => {
+        const classes = {
+          pending: 'badge',
+          running: 'badge running',
+          passed: 'badge passed',
+          failed: 'badge failed',
+          canceled: 'badge',
+        };
+        const label = status.charAt(0).toUpperCase() + status.slice(1);
+        return '<span class="' + (classes[status] || 'badge') + '">' + label + '</span>';
+      };
+
+      function renderTray() {
+        const jobs = Array.from(activeJobs.values())
+          .filter((job) => isActive(job.status))
+          .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+          .slice(0, 5);
+
+        if (jobs.length === 0) {
+          jobTray.classList.add('hidden');
+          jobTray.innerHTML = '';
+          return;
+        }
+
+        jobTray.classList.remove('hidden');
+        const items = jobs
+          .map((job) => {
+            const target = '/jobs/' + job.id;
+            const title = job.repo + '/' + job.branch;
+            const statusText = job.status === 'pending' ? 'Queued' : 'Running';
+            const timestamp = new Date(job.startedAt).toLocaleTimeString();
+            return (
+              '<li class="job-tray-item">' +
+              '<a href="' + target + '">Job #' + job.id + ': ' + title + '</a>' +
+              '<div class="job-tray-status">' +
+              renderBadge(job.status) +
+              '<span>' + statusText + ' since ' + timestamp + '</span>' +
+              '</div>' +
+              '</li>'
+            );
+          })
+          .join('');
+
+        jobTray.innerHTML =
+          '<h4>Active CI Jobs</h4>' +
+          '<ul class="job-tray-list">' + items + '</ul>';
+      }
+
+      window.addEventListener('forge:job-update', (event) => {
+        const { type, payload } = event.detail;
+
+        if (type === 'snapshot') {
+          activeJobs.clear();
+          for (const job of payload) {
+            if (isActive(job.status)) {
+              activeJobs.set(job.id, job);
+            }
+          }
+        } else if (type === 'job') {
+          if (isActive(payload.status)) {
+            activeJobs.set(payload.id, payload);
+          } else {
+            activeJobs.delete(payload.id);
+          }
+        }
+
+        renderTray();
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
