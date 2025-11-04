@@ -49,12 +49,19 @@ export function startServer(config: ForgeConfig): Server {
   router.get('/r/:repo/logs/:commit', handlers.getCILog);
   router.get('/jobs', handlers.getJobs);
   router.get('/jobs/:jobId', handlers.getJobDetail);
+  router.get('/jobs/:jobId/log-stream', handlers.getJobLogStream);
   router.post('/r/:repo/mr/:branch/merge', handlers.postMerge);
   router.post('/r/:repo/mr/:branch/delete', handlers.postDeleteBranch);
   router.post('/jobs/:jobId/cancel', handlers.postCancelJob);
   router.post('/jobs/:jobId/restart', handlers.postRestartJob);
   router.post('/hooks/post-receive', handlers.postReceive);
   router.post('/register-preview', handlers.postRegisterPreview);
+
+  if (handlers.postTestCreateJob && handlers.postTestAppendLog && handlers.postTestFinishJob) {
+    router.post('/__test__/jobs', handlers.postTestCreateJob);
+    router.post('/__test__/jobs/:jobId/log', handlers.postTestAppendLog);
+    router.post('/__test__/jobs/:jobId/finish', handlers.postTestFinishJob);
+  }
 
   bunServer = Bun.serve({
     port: config.port,

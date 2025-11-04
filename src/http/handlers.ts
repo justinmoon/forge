@@ -11,14 +11,15 @@ import { renderJobsDashboard, renderJobsScript, renderJobDetail } from '../views
 import { renderHistory } from '../views/history';
 import { renderLogin } from '../views/login';
 import { executeMerge } from '../git/merge-execute';
-import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob, getPreviewByBranch, deletePreview, registerPreview, getPreviewBySubdomain } from '../db';
+import { insertMergeHistory, insertCIJob, cancelPendingJobs, listCIJobs, getMergeHistory, getCIJob, getLatestCIJob, getPreviewByBranch, deletePreview, registerPreview, getPreviewBySubdomain, updateCIJob } from '../db';
 import { runPreMergeJob, runPostMergeJob, getCPUUsage, cancelJob, restartJob } from '../ci/runner';
 import { verifySignedEvent, isWhitelisted } from '../auth/nostr';
 import { createSession, deleteSession } from '../auth/session';
 import { getSessionCookie } from './middleware';
 import { randomBytes } from 'crypto';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, appendFileSync } from 'fs';
+import { streamJobLog, ensureJobLog, seedJobLog, appendJobLogChunk, completeJobLog } from '../realtime/log-stream';
 
 // Store active challenges with IP binding and rate limiting
 interface ChallengeEntry {
@@ -73,7 +74,20 @@ setInterval(() => {
 }, 60 * 1000); // Every minute
 
 export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) => string) {
-  return {
+  const decodeParam = (value: string): string => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const handlers: {
+    [key: string]: (req: Request, params: Record<string, string>) => Promise<Response>;
+    postTestCreateJob?: (req: Request, params: Record<string, string>) => Promise<Response>;
+    postTestAppendLog?: (req: Request, params: Record<string, string>) => Promise<Response>;
+    postTestFinishJob?: (req: Request, params: Record<string, string>) => Promise<Response>;
+  } = {
     getRoot: async (req: Request, params: Record<string, string>) => {
       const repos = listRepos(config.reposPath);
       return htmlResponse(renderRepoList(repos));
@@ -191,9 +205,10 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
 
     getMergeRequest: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
+      const decodedBranch = decodeParam(branch);
       const repoPath = getRepoPath(config.reposPath, repo);
       
-      const metadata = getMergeMetadata(repoPath, branch);
+      const metadata = getMergeMetadata(repoPath, decodedBranch);
       if (!metadata) {
         return htmlResponse('<h1>Branch not found</h1>', 404);
       }
@@ -201,14 +216,14 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
       const ciStatus = getCIStatus(
         config.logsPath,
         repo,
-        branch,
+        decodedBranch,
         metadata.headCommit
       );
       const autoMerge = hasAutoMergeTrailer(repoPath, metadata.headCommit);
 
       const mr: MergeRequest = {
         repo,
-        branch,
+        branch: decodedBranch,
         headCommit: metadata.headCommit,
         mergeBase: metadata.mergeBase,
         aheadCount: metadata.aheadCount,
@@ -218,9 +233,9 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
         autoMerge,
       };
 
-      const latestJob = getLatestCIJob(repo, branch, metadata.headCommit);
+      const latestJob = getLatestCIJob(repo, decodedBranch, metadata.headCommit);
       const diff = getDiff(repoPath, metadata.mergeBase, metadata.headCommit);
-      const preview = getPreviewByBranch(repo, branch);
+      const preview = getPreviewByBranch(repo, decodedBranch);
       const previewUrl = preview ? `https://${preview.subdomain}.${config.domain || 'forge.example.com'}` : null;
 
       return htmlResponse(renderMRDetail(repo, mr, diff, latestJob, previewUrl));
@@ -306,6 +321,23 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
       return htmlResponse(renderJobDetail(job, logContent, logDeleted, cpuUsage));
     },
 
+    getJobLogStream: async (req: Request, params: Record<string, string>) => {
+      const jobId = parseInt(params.jobId, 10);
+
+      if (isNaN(jobId)) {
+        return jsonError(400, 'Invalid job ID');
+      }
+
+      const job = getCIJob(jobId);
+
+      if (!job) {
+        return jsonError(404, 'Job not found');
+      }
+
+      ensureJobLog(job.id, job.logPath);
+      return streamJobLog(job.id);
+    },
+
     postCancelJob: async (req: Request, params: Record<string, string>) => {
       const jobId = parseInt(params.jobId, 10);
 
@@ -347,10 +379,11 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
 
     postMerge: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
+      const decodedBranch = decodeParam(branch);
 
       const repoPath = getRepoPath(config.reposPath, repo);
       
-      const metadata = getMergeMetadata(repoPath, branch);
+      const metadata = getMergeMetadata(repoPath, decodedBranch);
       if (!metadata) {
         return jsonError(404, 'Branch not found');
       }
@@ -358,7 +391,7 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
       const ciStatus = getCIStatus(
         config.logsPath,
         repo,
-        branch,
+        decodedBranch,
         metadata.headCommit
       );
 
@@ -370,7 +403,7 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
         return jsonError(400, 'Branch has conflicts with master');
       }
 
-      const result = executeMerge(repoPath, branch);
+      const result = executeMerge(repoPath, decodedBranch);
 
       if (!result.success) {
         return jsonError(500, result.error || 'Merge failed');
@@ -378,7 +411,7 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
 
       insertMergeHistory({
         repo,
-        branch,
+        branch: decodedBranch,
         headCommit: metadata.headCommit,
         mergeCommit: result.mergeCommit!,
         mergedAt: new Date(),
@@ -387,7 +420,7 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
       });
 
       // Clean up preview (branch is merged)
-      deletePreview(repo, branch);
+      deletePreview(repo, decodedBranch);
 
       // Trigger post-merge job (fire and forget)
       runPostMergeJob(config, repo, result.mergeCommit!).catch((err) => {
@@ -403,22 +436,23 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
 
     postDeleteBranch: async (req: Request, params: Record<string, string>) => {
       const { repo, branch } = params;
+      const decodedBranch = decodeParam(branch);
 
-      if (branch === 'master') {
+      if (decodedBranch === 'master') {
         return jsonError(400, 'Cannot delete master branch');
       }
 
       const repoPath = getRepoPath(config.reposPath, repo);
       const { execGit } = await import('../git/exec');
       
-      const deleteResult = execGit(['update-ref', '-d', `refs/heads/${branch}`], { cwd: repoPath });
+      const deleteResult = execGit(['update-ref', '-d', `refs/heads/${decodedBranch}`], { cwd: repoPath });
 
       if (!deleteResult.success) {
         return jsonError(500, deleteResult.stderr || 'Failed to delete branch');
       }
 
       // Cancel any pending CI jobs for this branch
-      cancelPendingJobs(repo, branch);
+      cancelPendingJobs(repo, decodedBranch);
 
       return jsonResponse({
         success: true,
@@ -708,4 +742,114 @@ export function createHandlers(config: ForgeConfig, getDirectIP: (req: Request) 
       }
     },
   };
+
+  if (config.isDevelopment) {
+    handlers.postTestCreateJob = async (req: Request) => {
+      try {
+        const payload = await req.json() as {
+          repo: string;
+          branch?: string;
+          headCommit?: string;
+          status?: string;
+          log?: string;
+        };
+
+        const repo = payload.repo?.trim();
+        if (!repo) {
+          return jsonError(400, 'repo is required');
+        }
+
+        const branch = payload.branch?.trim() || 'test-branch';
+        const headCommit = payload.headCommit?.trim() || randomBytes(20).toString('hex');
+        const status = payload.status || 'running';
+        const logContent = payload.log ?? '';
+
+        const repoPath = getRepoPath(config.reposPath, repo);
+        if (!existsSync(repoPath)) {
+          const created = createRepository(config, repo);
+          if (!created.success) {
+            return jsonError(500, created.error || 'Failed to create repository');
+          }
+        }
+
+        const logDir = join(config.logsPath, repo);
+        mkdirSync(logDir, { recursive: true });
+        const logPath = join(logDir, `${headCommit}.log`);
+        writeFileSync(logPath, logContent, { encoding: 'utf-8' });
+
+        const jobId = insertCIJob({
+          repo,
+          branch,
+          headCommit,
+          status,
+          logPath,
+          startedAt: new Date(),
+        });
+
+        seedJobLog(jobId, logContent);
+
+        return jsonResponse({ jobId, repo, branch, headCommit });
+      } catch (error) {
+        console.error('postTestCreateJob error:', error);
+        return jsonError(500, 'Failed to create test job');
+      }
+    };
+
+    handlers.postTestAppendLog = async (req: Request, params: Record<string, string>) => {
+      try {
+        const jobId = parseInt(params.jobId, 10);
+        if (Number.isNaN(jobId)) {
+          return jsonError(400, 'Invalid job ID');
+        }
+
+        const job = getCIJob(jobId);
+        if (!job) {
+          return jsonError(404, 'Job not found');
+        }
+
+        const payload = await req.json() as { chunk: string };
+        const chunk = payload.chunk ?? '';
+
+        appendFileSync(job.logPath, chunk, { encoding: 'utf-8' });
+        appendJobLogChunk(jobId, chunk);
+
+        return jsonResponse({ ok: true });
+      } catch (error) {
+        console.error('postTestAppendLog error:', error);
+        return jsonError(500, 'Failed to append log chunk');
+      }
+    };
+
+    handlers.postTestFinishJob = async (req: Request, params: Record<string, string>) => {
+      try {
+        const jobId = parseInt(params.jobId, 10);
+        if (Number.isNaN(jobId)) {
+          return jsonError(400, 'Invalid job ID');
+        }
+
+        const job = getCIJob(jobId);
+        if (!job) {
+          return jsonError(404, 'Job not found');
+        }
+
+        const payload = await req.json().catch(() => ({})) as { status?: string; exitCode?: number };
+        const status = payload.status || 'passed';
+        const exitCode = payload.exitCode ?? 0;
+
+        completeJobLog(jobId);
+        updateCIJob(jobId, {
+          status,
+          finishedAt: new Date(),
+          exitCode,
+        });
+
+        return jsonResponse({ ok: true });
+      } catch (error) {
+        console.error('postTestFinishJob error:', error);
+        return jsonError(500, 'Failed to finish job');
+      }
+    };
+  }
+
+  return handlers;
 }

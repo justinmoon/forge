@@ -1,9 +1,10 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { execGit } from '../git/exec';
 import { updateCIJob, getCIJob, insertCIJob } from '../db';
 import { tryAutoMerge } from './auto-merge';
+import { appendJobLogChunk, completeJobLog, seedJobLog } from '../realtime/log-stream';
 import type { ForgeConfig } from '../types';
 
 export interface RunningJob {
@@ -13,6 +14,35 @@ export interface RunningJob {
 }
 
 const runningJobs = new Map<number, RunningJob>();
+
+function resolveNixSystem(): string {
+  const archMap: Record<string, string> = {
+    arm64: 'aarch64',
+    aarch64: 'aarch64',
+    x64: 'x86_64',
+    ia32: 'i686',
+  };
+  const platformMap: Record<string, string> = {
+    darwin: 'darwin',
+    linux: 'linux',
+  };
+
+  const arch = archMap[process.arch] ?? process.arch;
+  const platform = platformMap[process.platform] ?? process.platform;
+  return `${arch}-${platform}`;
+}
+
+function flakeAppExists(worktreePath: string, app: string): boolean {
+  const system = resolveNixSystem();
+  const attr = `.#apps.${system}.${app}`;
+  const result = spawnSync('nix', ['eval', '--json', attr], {
+    cwd: worktreePath,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+
+  return result.status === 0;
+}
 
 export function isJobRunning(jobId: number): boolean {
   return runningJobs.has(jobId);
@@ -126,6 +156,7 @@ export async function runPreMergeJob(
     updateCIJob(jobId, { status: 'running' });
 
     const logStream = require('fs').createWriteStream(logPath, { flags: 'w' });
+    seedJobLog(jobId, '');
     
     const startTime = Date.now();
 
@@ -148,10 +179,12 @@ export async function runPreMergeJob(
 
     ciProcess.stdout?.on('data', (data) => {
       logStream.write(data);
+      appendJobLogChunk(jobId, data.toString());
     });
 
     ciProcess.stderr?.on('data', (data) => {
       logStream.write(data);
+      appendJobLogChunk(jobId, data.toString());
     });
 
     const exitCode = await new Promise<number>((resolve) => {
@@ -166,6 +199,8 @@ export async function runPreMergeJob(
 
     logStream.end();
     runningJobs.delete(jobId);
+
+    completeJobLog(jobId);
 
     const finishedAt = new Date();
     const status = exitCode === 0 ? 'passed' : 'failed';
@@ -305,6 +340,35 @@ export async function runPostMergeJob(
     updateCIJob(jobId, { status: 'running' });
 
     const logStream = require('fs').createWriteStream(logPath, { flags: 'w' });
+    seedJobLog(jobId, '');
+
+    if (!flakeAppExists(worktreePath, 'post-merge')) {
+      const message = 'post-merge app (.#post-merge) not found; skipping post-merge CI.\n';
+      logStream.write(message);
+      logStream.end();
+      appendJobLogChunk(jobId, message);
+      updateCIJob(jobId, {
+        status: 'failed',
+        finishedAt: new Date(),
+        exitCode: 1,
+      });
+      completeJobLog(jobId);
+      try {
+        writeFileSync(
+          statusPath,
+          JSON.stringify({
+            status: 'failed',
+            exitCode: 1,
+            reason: 'post-merge app missing',
+            finishedAt: new Date().toISOString(),
+          }, null, 2)
+        );
+      } catch (err) {
+        console.error('Failed to write post-merge status file:', err);
+      }
+      return;
+    }
+
     const startTime = Date.now();
 
     // Run nix run .#post-merge
@@ -321,10 +385,12 @@ export async function runPostMergeJob(
 
     postMergeProcess.stdout?.on('data', (data) => {
       logStream.write(data);
+      appendJobLogChunk(jobId, data.toString());
     });
 
     postMergeProcess.stderr?.on('data', (data) => {
       logStream.write(data);
+      appendJobLogChunk(jobId, data.toString());
     });
 
     const exitCode = await new Promise<number>((resolve) => {
@@ -339,6 +405,7 @@ export async function runPostMergeJob(
 
     logStream.end();
     runningJobs.delete(jobId);
+    completeJobLog(jobId);
 
     const finishedAt = new Date();
     const status = exitCode === 0 ? 'passed' : 'failed';
@@ -370,6 +437,7 @@ export async function runPostMergeJob(
       finishedAt: new Date(),
       exitCode: 1,
     });
+    completeJobLog(jobId);
   } finally {
     try {
       execGit(['worktree', 'remove', '--force', worktreePath], {

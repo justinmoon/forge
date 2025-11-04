@@ -23,11 +23,12 @@ export function renderMRList(repo: string, mrs: MergeRequest[]): string {
         ? '<span class="badge conflicts">conflicts</span>'
         : '<span class="badge clean">clean</span>';
       
+      const branchSlug = encodeURIComponent(mr.branch);
       return `
       <li>
         <div class="mr-item">
           <div class="mr-info">
-            <h3><a href="/r/${escapeHtml(repo)}/mr/${escapeHtml(mr.branch)}">${escapeHtml(mr.branch)}</a></h3>
+            <h3><a href="/r/${escapeHtml(repo)}/mr/${branchSlug}">${escapeHtml(mr.branch)}</a></h3>
             <div class="stats">
               ${mr.aheadCount} commit${mr.aheadCount === 1 ? '' : 's'} ahead, 
               ${mr.behindCount} behind
@@ -77,12 +78,8 @@ export function renderMRDetail(repo: string, mr: MergeRequest, diff: string, lat
     ciAlert = `
       <div class="alert warning">
         <strong>CI not configured</strong>
-        <p>This repository does not have CI configured. To enable merging:</p>
-        <ul>
-          <li>Add <code>.github/workflows/*.yml</code>, or</li>
-          <li>Expose <code>.#ci</code> in your <code>flake.nix</code></li>
-        </ul>
-        <p>Merging is disabled until CI is configured and passes.</p>
+        <p>This repository does not expose <code>.#pre-merge</code> in its <code>flake.nix</code>, so Forge cannot run CI yet.</p>
+        <p>Add a <code>pre-merge</code> app (for example: <code>apps.pre-merge = { program = &quot;…&quot;; };</code>) and push a commit to enable merging.</p>
       </div>
     `;
   } else if (mr.ciStatus === 'running') {

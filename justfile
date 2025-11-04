@@ -22,17 +22,7 @@ test-file file:
 
 # Run the server in development mode
 dev:
-    #!/usr/bin/env bash
-    export NODE_ENV=development
-    export DISABLE_AUTH=true
-    export FORGE_ALLOWED_PUBKEYS=npub1zxu639qym0esxnn7rzrt48wycmfhdu3e5yvzwx7ja3t84zyc2r8qz8cx2y
-    export FORGE_DATA_DIR="./tmp/forge-dev"
-    export FORGE_PORT=3030
-    mkdir -p ./tmp/forge-dev
-    bun run src/index.ts &
-    sleep 2
-    open http://localhost:3030
-    wait
+    ./scripts/dev.sh
 
 # Run the server (alias for dev)
 start: dev
@@ -48,6 +38,14 @@ build:
 # Run via nix
 run:
     nix run .#forge
+
+# Run pre-merge pipeline
+pre-merge:
+    nix run .#pre-merge
+
+# Run post-merge pipeline
+post-merge:
+    nix run .#post-merge
 
 # Enter development shell
 shell:

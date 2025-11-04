@@ -1,6 +1,6 @@
 import { layout, escapeHtml } from './layout';
 import type { CIJob } from '../types';
-import AnsiToHtml from 'ansi-to-html';
+import { seedJobLog } from '../realtime/log-stream';
 
 export function renderJobsDashboard(
   jobs: CIJob[],
@@ -108,15 +108,13 @@ export function renderJobDetail(
     ? Math.round((job.finishedAt.getTime() - job.startedAt.getTime()) / 1000)
     : Math.round((Date.now() - job.startedAt.getTime()) / 1000);
 
-  const refreshButton = job.status === 'running'
-    ? `<button class="button" onclick="window.location.reload()" style="background: #28a745; margin-left: 10px;">Refresh</button>`
-    : '';
-
   const cpuDisplay = cpuUsage !== null
     ? `<div class="stats">CPU Usage: ${cpuUsage.toFixed(1)}%</div>`
     : '';
 
   let logSection = '';
+  const shouldStream = job.status === 'running';
+
   if (logDeleted) {
     logSection = `
       <div class="alert warning">
@@ -125,23 +123,23 @@ export function renderJobDetail(
       </div>
     `;
   } else if (logContent) {
-    // Convert ANSI codes to HTML server-side
-    const convert = new AnsiToHtml({
-      fg: '#d4d4d4',
-      bg: '#1e1e1e',
-      newline: true,
-      escapeXML: true,
-    });
-    const logHtml = convert.toHtml(logContent);
-    
+    const logHtml = seedJobLog(job.id, logContent);
     logSection = `
       <h3>Build Log</h3>
-      <div class="log-container">
-        <pre>${logHtml}</pre>
+      <div id="job-log-root" class="log-container">
+        <pre id="job-log-pre">${logHtml}</pre>
       </div>
+      ${shouldStream ? renderLogStreamScript(job.id) : ''}
     `;
   } else {
-    logSection = '<p>No log content available.</p>';
+    seedJobLog(job.id, '');
+    logSection = `
+      <h3>Build Log</h3>
+      <div id="job-log-root" class="log-container">
+        <pre id="job-log-pre">&#8203;</pre>
+      </div>
+      ${shouldStream ? renderLogStreamScript(job.id) : ''}
+    `;
   }
 
   return layout(`Job #${job.id}`, `
@@ -171,11 +169,32 @@ export function renderJobDetail(
 
     <div style="margin: 20px 0;">
       <a href="/jobs" class="button">Back to Jobs</a>
-      ${refreshButton}
     </div>
 
     ${logSection}
   `);
+}
+
+function renderLogStreamScript(jobId: number): string {
+  const streamUrl = `/jobs/${jobId}/log-stream`;
+  return `
+    <script>
+      (() => {
+        const source = new EventSource('${streamUrl}');
+        source.addEventListener('log', (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            const target = document.querySelector('#job-log-pre');
+            if (target) {
+              target.innerHTML = payload.html || '\u200b';
+            }
+          } catch (_) {
+            // Ignore malformed events; the stream will retry automatically.
+          }
+        });
+      })();
+    </script>
+  `;
 }
 
 export function renderJobsScript(): string {

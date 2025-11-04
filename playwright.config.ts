@@ -31,6 +31,7 @@ export default defineConfig({
       FORGE_DATA_DIR: '.forge-e2e',
       FORGE_PORT: '3030',
       FORGE_MERGE_PASSWORD: 'test-password',
+      NODE_ENV: 'test',
     },
   },
 });
