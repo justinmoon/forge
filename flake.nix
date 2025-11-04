@@ -65,7 +65,7 @@
               set -euo pipefail
               export PATH="${pkgs.lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.nix pkgs.bun ]}"
               echo "Installing dependencies with npm..."
-              npm install --no-package-lock
+              npm install --include=dev --no-package-lock
               echo "Running biome check..."
               npx @biomejs/biome check src/realtime src/ci/runner.ts src/cli/index.ts src/http/handlers.ts src/views/jobs.ts src/views/merge-requests.ts tests/job-log-stream.spec.ts scripts/dev.sh examples/demo-stream
               echo "Running TypeScript build..."

@@ -340,7 +340,7 @@ export function getCPUUsage(jobId: number): number | null {
 		});
 		const cpu = Number.parseFloat(output.trim());
 		return Number.isNaN(cpu) ? null : cpu;
-	} catch (error) {
+	} catch (_error) {
 		return null;
 	}
 }

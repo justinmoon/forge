@@ -162,16 +162,16 @@ export function createHandlers(
 	};
 
 	const baseHandlers: Record<string, Handler> = {
-		getRoot: async (req: Request, params: Record<string, string>) => {
+		getRoot: async (_req: Request, _params: Record<string, string>) => {
 			const repos = listRepos(config.reposPath);
 			return htmlResponse(renderRepoList(repos));
 		},
 
-		getCreate: async (req: Request, params: Record<string, string>) => {
+		getCreate: async (_req: Request, _params: Record<string, string>) => {
 			return htmlResponse(renderCreateRepoForm());
 		},
 
-		postCreate: async (req: Request, params: Record<string, string>) => {
+		postCreate: async (req: Request, _params: Record<string, string>) => {
 			try {
 				const formData = await req.formData();
 				const name = formData.get("name") as string;
@@ -191,12 +191,12 @@ export function createHandlers(
 				const webUrl = `/r/${name}`;
 
 				return htmlResponse(renderRepoCreated(name, cloneUrl, webUrl));
-			} catch (error) {
+			} catch (_error) {
 				return htmlResponse(renderCreateRepoForm("Invalid request"), 400);
 			}
 		},
 
-		getDeleteConfirm: async (req: Request, params: Record<string, string>) => {
+		getDeleteConfirm: async (_req: Request, params: Record<string, string>) => {
 			const { repo } = params;
 			const repoPath = getRepoPath(config.reposPath, repo);
 			const { existsSync } = await import("node:fs");
@@ -238,12 +238,12 @@ export function createHandlers(
             </body>
           </html>
         `);
-			} catch (error) {
+			} catch (_error) {
 				return jsonError(400, "Invalid request");
 			}
 		},
 
-		getRepo: async (req: Request, params: Record<string, string>) => {
+		getRepo: async (_req: Request, params: Record<string, string>) => {
 			const { repo } = params;
 			const repoPath = getRepoPath(config.reposPath, repo);
 			const branches = listFeatureBranches(repoPath);
@@ -277,7 +277,7 @@ export function createHandlers(
 			return htmlResponse(renderMRList(repo, mrs));
 		},
 
-		getMergeRequest: async (req: Request, params: Record<string, string>) => {
+		getMergeRequest: async (_req: Request, params: Record<string, string>) => {
 			const { repo, branch } = params;
 			const decodedBranch = decodeParam(branch);
 			const repoPath = getRepoPath(config.reposPath, repo);
@@ -323,13 +323,13 @@ export function createHandlers(
 			);
 		},
 
-		getHistory: async (req: Request, params: Record<string, string>) => {
+		getHistory: async (_req: Request, params: Record<string, string>) => {
 			const { repo } = params;
 			const history = getMergeHistory(repo, 100);
 			return htmlResponse(renderHistory(repo, history));
 		},
 
-		getCILog: async (req: Request, params: Record<string, string>) => {
+		getCILog: async (_req: Request, params: Record<string, string>) => {
 			const { repo, commit } = params;
 			const logPath = join(config.logsPath, repo, `${commit}.log`);
 
@@ -363,7 +363,7 @@ export function createHandlers(
       `);
 		},
 
-		getJobs: async (req: Request, params: Record<string, string>) => {
+		getJobs: async (_req: Request, _params: Record<string, string>) => {
 			const jobs = listCIJobs(100);
 
 			const cpuUsages = new Map<number, number | null>();
@@ -382,7 +382,7 @@ export function createHandlers(
 			return htmlResponse(withScript);
 		},
 
-		getJobDetail: async (req: Request, params: Record<string, string>) => {
+		getJobDetail: async (_req: Request, params: Record<string, string>) => {
 			const jobId = Number.parseInt(params.jobId, 10);
 
 			if (Number.isNaN(jobId)) {
@@ -411,7 +411,7 @@ export function createHandlers(
 			);
 		},
 
-		getJobLogStream: async (req: Request, params: Record<string, string>) => {
+		getJobLogStream: async (_req: Request, params: Record<string, string>) => {
 			const jobId = Number.parseInt(params.jobId, 10);
 
 			if (Number.isNaN(jobId)) {
@@ -428,7 +428,7 @@ export function createHandlers(
 			return streamJobLog(job.id);
 		},
 
-		postCancelJob: async (req: Request, params: Record<string, string>) => {
+		postCancelJob: async (_req: Request, params: Record<string, string>) => {
 			const jobId = Number.parseInt(params.jobId, 10);
 
 			if (Number.isNaN(jobId)) {
@@ -447,7 +447,7 @@ export function createHandlers(
 			});
 		},
 
-		postRestartJob: async (req: Request, params: Record<string, string>) => {
+		postRestartJob: async (_req: Request, params: Record<string, string>) => {
 			const jobId = Number.parseInt(params.jobId, 10);
 
 			if (Number.isNaN(jobId)) {
@@ -467,7 +467,7 @@ export function createHandlers(
 			});
 		},
 
-		postMerge: async (req: Request, params: Record<string, string>) => {
+		postMerge: async (_req: Request, params: Record<string, string>) => {
 			const { repo, branch } = params;
 			const decodedBranch = decodeParam(branch);
 
@@ -526,7 +526,7 @@ export function createHandlers(
 			});
 		},
 
-		postDeleteBranch: async (req: Request, params: Record<string, string>) => {
+		postDeleteBranch: async (_req: Request, params: Record<string, string>) => {
 			const { repo, branch } = params;
 			const decodedBranch = decodeParam(branch);
 
@@ -555,7 +555,7 @@ export function createHandlers(
 			});
 		},
 
-		postReceive: async (req: Request, params: Record<string, string>) => {
+		postReceive: async (req: Request, _params: Record<string, string>) => {
 			try {
 				const payload = await req.json();
 				if (!isRecord(payload)) {
@@ -658,11 +658,11 @@ export function createHandlers(
 			}
 		},
 
-		getLogin: async (req: Request, params: Record<string, string>) => {
+		getLogin: async (_req: Request, _params: Record<string, string>) => {
 			return htmlResponse(renderLogin());
 		},
 
-		getAuthChallenge: async (req: Request, params: Record<string, string>) => {
+		getAuthChallenge: async (req: Request, _params: Record<string, string>) => {
 			const directIP = getDirectIP(req);
 			const ip = getRequestIP(req, config.trustProxy, directIP);
 
@@ -695,7 +695,7 @@ export function createHandlers(
 			return jsonResponse({ challenge });
 		},
 
-		postAuthVerify: async (req: Request, params: Record<string, string>) => {
+		postAuthVerify: async (req: Request, _params: Record<string, string>) => {
 			try {
 				const payload = await req.json();
 				if (
@@ -779,7 +779,7 @@ export function createHandlers(
 
 		postRegisterPreview: async (
 			req: Request,
-			params: Record<string, string>,
+			_params: Record<string, string>,
 		) => {
 			try {
 				const payload = await req.json();
@@ -830,7 +830,7 @@ export function createHandlers(
 			}
 		},
 
-		postLogout: async (req: Request, params: Record<string, string>) => {
+		postLogout: async (req: Request, _params: Record<string, string>) => {
 			const sessionId = getSessionCookie(req);
 
 			if (sessionId) {
@@ -849,7 +849,7 @@ export function createHandlers(
 			return response;
 		},
 
-		proxyPreview: async (req: Request, params: Record<string, string>) => {
+		proxyPreview: async (req: Request, _params: Record<string, string>) => {
 			try {
 				const url = new URL(req.url);
 				const host = url.hostname;

@@ -2,7 +2,7 @@
 
 import { getCPUUsage } from "../ci/runner";
 import { getCIStatus } from "../ci/status";
-import { getCIJob, getLatestCIJob, initDatabase, listCIJobs } from "../db";
+import { getLatestCIJob, initDatabase, listCIJobs } from "../db";
 import { getMergeMetadata } from "../git/merge";
 import { hasAutoMergeTrailer } from "../git/trailers";
 import { getConfig } from "../utils/config";
