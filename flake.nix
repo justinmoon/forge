@@ -25,13 +25,13 @@
 
           buildPhase = ''
             export HOME=$TMPDIR
-            bun install --frozen-lockfile
+            bun install --no-progress
           '';
 
           installPhase = ''
             mkdir -p $out/bin $out/share/forge
             cp -r . $out/share/forge/
-            
+
             cat > $out/bin/forge <<EOF
             #!/usr/bin/env bash
             exec ${pkgs.bun}/bin/bun run $out/share/forge/src/cli/index.ts "\$@"
