@@ -30,7 +30,7 @@ export interface CIJob {
   repo: string;
   branch: string;
   headCommit: string;
-  status: 'pending' | 'running' | 'passed' | 'failed' | 'canceled';
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'timeout' | 'canceled';
   logPath: string;
   startedAt: Date;
   finishedAt: Date | null;
@@ -58,4 +58,6 @@ export interface ForgeConfig {
   domain?: string;
   isDevelopment: boolean;
   trustProxy: boolean; // Trust X-Forwarded-For header (only enable behind trusted reverse proxy)
+  jobTimeout: number; // CI job timeout in seconds (default: 3600 = 1 hour)
+  jobTimeoutCheckInterval: number; // How often to check for timeouts in ms (default: 30000 = 30 seconds)
 }

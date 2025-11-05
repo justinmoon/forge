@@ -29,6 +29,7 @@ export interface RunningJob {
 }
 
 const runningJobs = new Map<number, RunningJob>();
+let timeoutMonitorInterval: NodeJS.Timeout | null = null;
 
 function resolveNixSystem(): string {
 	const archMap: Record<string, string> = {
@@ -67,7 +68,7 @@ export function getRunningJob(jobId: number): RunningJob | undefined {
 	return runningJobs.get(jobId);
 }
 
-export function cancelJob(jobId: number): boolean {
+export function cancelJob(jobId: number, reason: string = "canceled"): boolean {
 	const job = runningJobs.get(jobId);
 
 	// If job is not in memory, check if it exists in DB as "running"
@@ -76,11 +77,11 @@ export function cancelJob(jobId: number): boolean {
 		if (dbJob && dbJob.status === "running") {
 			// Stuck job - mark as canceled in DB
 			updateCIJob(jobId, {
-				status: "canceled",
+				status: reason,
 				finishedAt: new Date(),
-				exitCode: 143, // SIGTERM
+				exitCode: reason === "timeout" ? 124 : 143, // 124 for timeout, 143 for SIGTERM
 			});
-			console.log(`Canceled stuck job ${jobId} (no running process found)`);
+			console.log(`${reason === "timeout" ? "Timed out" : "Canceled"} stuck job ${jobId} (no running process found)`);
 			return true;
 		}
 		return false;
@@ -91,15 +92,52 @@ export function cancelJob(jobId: number): boolean {
 		runningJobs.delete(jobId);
 
 		updateCIJob(jobId, {
-			status: "canceled",
+			status: reason,
 			finishedAt: new Date(),
-			exitCode: 143, // SIGTERM
+			exitCode: reason === "timeout" ? 124 : 143,
 		});
 
+		console.log(`${reason === "timeout" ? "Timed out" : "Canceled"} job ${jobId}`);
 		return true;
 	} catch (error) {
-		console.error(`Failed to cancel job ${jobId}:`, error);
+		console.error(`Failed to ${reason === "timeout" ? "timeout" : "cancel"} job ${jobId}:`, error);
 		return false;
+	}
+}
+
+/**
+ * Start monitoring running jobs for timeouts
+ */
+export function startJobTimeoutMonitor(config: ForgeConfig): void {
+	if (timeoutMonitorInterval) {
+		console.warn("Timeout monitor already running");
+		return;
+	}
+
+	console.log(`Starting job timeout monitor (timeout: ${config.jobTimeout}s, check interval: ${config.jobTimeoutCheckInterval}ms)`);
+
+	timeoutMonitorInterval = setInterval(() => {
+		const now = Date.now();
+
+		for (const [jobId, job] of runningJobs.entries()) {
+			const elapsedSeconds = (now - job.startTime) / 1000;
+
+			if (elapsedSeconds > config.jobTimeout) {
+				console.warn(`Job ${jobId} exceeded timeout (${elapsedSeconds.toFixed(0)}s > ${config.jobTimeout}s)`);
+				cancelJob(jobId, "timeout");
+			}
+		}
+	}, config.jobTimeoutCheckInterval);
+}
+
+/**
+ * Stop the timeout monitor
+ */
+export function stopJobTimeoutMonitor(): void {
+	if (timeoutMonitorInterval) {
+		clearInterval(timeoutMonitorInterval);
+		timeoutMonitorInterval = null;
+		console.log("Stopped job timeout monitor");
 	}
 }
 
@@ -233,16 +271,21 @@ export async function runPreMergeJob(
 		completeJobLog(jobId);
 
 		const finishedAt = new Date();
-		const status = exitCode === 0 ? "passed" : "failed";
+
+		// Check if job was already marked as timeout or canceled
+		const dbJob = getCIJob(jobId);
+		const finalStatus = dbJob && (dbJob.status === "timeout" || dbJob.status === "canceled")
+			? dbJob.status
+			: (exitCode === 0 ? "passed" : "failed");
 
 		updateCIJob(jobId, {
-			status,
+			status: finalStatus,
 			finishedAt,
 			exitCode,
 		});
 
 		const statusData = {
-			status,
+			status: finalStatus,
 			exitCode,
 			startedAt: new Date(startTime).toISOString(),
 			finishedAt: finishedAt.toISOString(),
@@ -257,16 +300,16 @@ export async function runPreMergeJob(
 		}
 
 		console.log(
-			`Pre-merge job ${jobId} completed with status: ${status} (exit ${exitCode})`,
+			`Pre-merge job ${jobId} completed with status: ${finalStatus} (exit ${exitCode})`,
 		);
 
-		if (status === "passed") {
+		if (finalStatus === "passed") {
 			const autoMergeResult = tryAutoMerge(
 				config,
 				repo,
 				branch,
 				headCommit,
-				status,
+				finalStatus,
 			);
 			if (autoMergeResult.attempted) {
 				if (autoMergeResult.success) {
@@ -459,16 +502,21 @@ export async function runPostMergeJob(
 		completeJobLog(jobId);
 
 		const finishedAt = new Date();
-		const status = exitCode === 0 ? "passed" : "failed";
+
+		// Check if job was already marked as timeout or canceled
+		const dbJob = getCIJob(jobId);
+		const finalStatus = dbJob && (dbJob.status === "timeout" || dbJob.status === "canceled")
+			? dbJob.status
+			: (exitCode === 0 ? "passed" : "failed");
 
 		updateCIJob(jobId, {
-			status,
+			status: finalStatus,
 			finishedAt,
 			exitCode,
 		});
 
 		const statusData = {
-			status,
+			status: finalStatus,
 			exitCode,
 			startedAt: new Date(startTime).toISOString(),
 			finishedAt: finishedAt.toISOString(),
@@ -480,7 +528,7 @@ export async function runPostMergeJob(
 		);
 
 		console.log(
-			`Post-merge job ${jobId} completed: ${status} (exit ${exitCode})`,
+			`Post-merge job ${jobId} completed: ${finalStatus} (exit ${exitCode})`,
 		);
 	} catch (error) {
 		console.error(`Post-merge job ${jobId} failed:`, error);

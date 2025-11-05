@@ -32,6 +32,8 @@ export function createTestContext(): TestContext {
     workPath,
     isDevelopment: true,
     trustProxy: false, // Tests run without proxy
+    jobTimeout: 3600,
+    jobTimeoutCheckInterval: 30000,
   };
 
   const cleanup = () => {

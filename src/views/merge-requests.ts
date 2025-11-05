@@ -92,6 +92,7 @@ export function renderMRListScript(repo: string): string {
             running: 'CI running',
             passed: 'CI passed',
             failed: 'CI failed',
+            timeout: 'CI timeout',
             canceled: 'CI canceled'
           };
           const classes = {
@@ -99,6 +100,7 @@ export function renderMRListScript(repo: string): string {
             running: 'badge running',
             passed: 'badge passed',
             failed: 'badge failed',
+            timeout: 'badge timeout',
             canceled: 'badge'
           };
           const label = labels[status] || status;
@@ -177,6 +179,7 @@ export function renderMRDetailScript(
             running: 'CI running',
             passed: 'CI passed',
             failed: 'CI failed',
+            timeout: 'CI timeout',
             canceled: 'CI canceled'
           };
           const classes = {
@@ -184,6 +187,7 @@ export function renderMRDetailScript(
             running: 'badge running',
             passed: 'badge passed',
             failed: 'badge failed',
+            timeout: 'badge timeout',
             canceled: 'badge'
           };
           const label = labels[status] || status;
@@ -199,6 +203,9 @@ export function renderMRDetailScript(
           }
           if (status === 'failed') {
             return '<div class="alert warning"><strong>CI failed</strong><p>Review the logs to resolve issues before merging.</p></div>' + conflictAlert;
+          }
+          if (status === 'timeout') {
+            return '<div class="alert warning"><strong>CI timed out</strong><p>The job exceeded the configured timeout limit. Review the logs and consider restarting.</p></div>' + conflictAlert;
           }
           if (status === 'canceled') {
             return '<div class="alert warning"><strong>CI canceled</strong><p>The most recent job was canceled.</p></div>' + conflictAlert;

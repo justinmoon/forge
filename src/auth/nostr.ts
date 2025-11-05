@@ -1,6 +1,6 @@
 import { Helpers } from 'applesauce-core';
-import type { NostrEvent } from 'applesauce-core';
-const { verifyEvent, npubEncode, npubDecode } = Helpers;
+import type { NostrEvent } from 'nostr-tools/pure';
+const { verifyEvent, npubEncode, decodePointer } = Helpers;
 
 /**
  * Verify a signed Nostr event matches the expected challenge
@@ -45,8 +45,11 @@ export function verifySignedEvent(event: NostrEvent, challenge: string): boolean
  */
 export function npubToHex(npub: string): string {
   try {
-    const decoded = npubDecode(npub);
-    return decoded.pubkey;
+    const decoded = decodePointer(npub);
+    if (decoded.type !== 'npub') {
+      throw new Error('Not an npub');
+    }
+    return decoded.data;
   } catch (error) {
     throw new Error(`Invalid npub: ${error}`);
   }

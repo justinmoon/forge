@@ -37,8 +37,9 @@ export function createSessionMiddleware(config: ForgeConfig): Middleware {
   return async (req: Request): Promise<Response | null> => {
     const url = new URL(req.url);
     
-    // Skip auth for login and auth endpoints
-    const publicPaths = ['/login', '/auth/challenge', '/auth/verify'];
+    // Skip auth for login, auth endpoints, and webhooks
+    // Note: /hooks/post-receive must be public for git post-receive hooks to trigger CI
+    const publicPaths = ['/login', '/auth/challenge', '/auth/verify', '/hooks/post-receive'];
     if (publicPaths.some(path => url.pathname.startsWith(path))) {
       return null;
     }

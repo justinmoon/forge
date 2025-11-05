@@ -27,7 +27,7 @@ Commands:
   status <repo> <branch>     Print MR fields, CI status, and merge eligibility
   wait-ci <repo> <branch>    Block until the latest CI run completes
   cancel-ci <job_id>         Cancel an active CI job
-  restart-ci <job_id>        Restart a failed/canceled CI job
+  restart-ci <job_id>        Restart a failed/timeout/canceled CI job
   jobs                       List CI jobs (running first, then latest 100)
   --help, -h                 Show this help message
   --version, -v              Show version
@@ -193,6 +193,7 @@ if (!command) {
 			job &&
 			(job.status === "passed" ||
 				job.status === "failed" ||
+				job.status === "timeout" ||
 				job.status === "canceled")
 		) {
 			clearInterval(checkInterval);

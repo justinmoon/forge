@@ -58,11 +58,25 @@ export function getConfig(requirePassword: boolean = false): ForgeConfig {
   
   // Only trust X-Forwarded-For when behind a trusted reverse proxy
   const trustProxy = process.env.FORGE_TRUST_PROXY === 'true';
-  
+
   if (trustProxy) {
     console.log('✓ Proxy trust enabled: Using X-Forwarded-For for original client IP');
   } else {
     console.log('✓ Direct mode: Using TCP connection address for IP-based security');
+  }
+
+  // CI job timeout configuration
+  const jobTimeout = parseInt(process.env.FORGE_JOB_TIMEOUT || '3600', 10);
+  const jobTimeoutCheckInterval = parseInt(process.env.FORGE_JOB_TIMEOUT_CHECK_INTERVAL || '30000', 10);
+
+  // Validate timeout values
+  if (jobTimeout <= 0) {
+    console.error('❌ Invalid FORGE_JOB_TIMEOUT: must be > 0');
+    process.exit(1);
+  }
+  if (jobTimeoutCheckInterval <= 0) {
+    console.error('❌ Invalid FORGE_JOB_TIMEOUT_CHECK_INTERVAL: must be > 0');
+    process.exit(1);
   }
 
   return {
@@ -76,6 +90,8 @@ export function getConfig(requirePassword: boolean = false): ForgeConfig {
     domain,
     isDevelopment,
     trustProxy,
+    jobTimeout,
+    jobTimeoutCheckInterval,
   };
 }
 

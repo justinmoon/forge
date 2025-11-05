@@ -56,6 +56,7 @@ export function layout(title: string, body: string): string {
     .badge.running { background: #fff3cd; color: #856404; }
     .badge.passed { background: #d4edda; color: #155724; }
     .badge.failed { background: #f8d7da; color: #721c24; }
+    .badge.timeout { background: #ffe5d0; color: #854d0e; }
     .badge.clean { background: #d4edda; color: #155724; }
     .badge.conflicts { background: #f8d7da; color: #721c24; }
     .diff-container {
@@ -461,6 +462,7 @@ export function layout(title: string, body: string): string {
           running: 'badge running',
           passed: 'badge passed',
           failed: 'badge failed',
+          timeout: 'badge timeout',
           canceled: 'badge',
         };
         const label = status.charAt(0).toUpperCase() + status.slice(1);

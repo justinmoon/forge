@@ -86,6 +86,16 @@ in
         Leave empty to disable Nostr authentication.
       '';
     };
+
+    jobTimeout = mkOption {
+      type = types.int;
+      default = 3600;
+      example = 7200;
+      description = ''
+        Maximum time in seconds that a CI job can run before being automatically killed.
+        Default is 3600 seconds (1 hour).
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
@@ -120,6 +130,7 @@ in
         FORGE_MERGE_PASSWORD = cfg.mergePassword;
         FORGE_DOMAIN = mkIf (cfg.domain != null) cfg.domain;
         FORGE_ALLOWED_PUBKEYS = mkIf (cfg.allowedPubkeys != []) (builtins.concatStringsSep "," cfg.allowedPubkeys);
+        FORGE_JOB_TIMEOUT = toString cfg.jobTimeout;
         NODE_ENV = "production";
         HOME = cfg.dataDir;
       };

@@ -77,7 +77,7 @@ function renderJobItem(
 		: "";
 
 	const restartButton =
-		job.status === "failed" || job.status === "canceled"
+		job.status === "failed" || job.status === "canceled" || job.status === "timeout"
 			? `
       <button class="button" style="background: #17a2b8; padding: 5px 10px; font-size: 0.85em; margin-left: 5px;" onclick="restartJob(${job.id})">
         Restart
@@ -126,6 +126,7 @@ function getStatusBadge(status: string): string {
 		running: '<span class="badge running">running</span>',
 		passed: '<span class="badge passed">passed</span>',
 		failed: '<span class="badge failed">failed</span>',
+		timeout: '<span class="badge timeout">timeout</span>',
 		canceled: '<span class="badge">canceled</span>',
 	};
 	return badges[status] || '<span class="badge">unknown</span>';
@@ -262,6 +263,7 @@ export function renderJobsScript(initialJobs: JobSummary[]): string {
           running: 'Running',
           passed: 'Passed',
           failed: 'Failed',
+          timeout: 'Timeout',
           canceled: 'Canceled'
         };
         const classes = {
@@ -269,6 +271,7 @@ export function renderJobsScript(initialJobs: JobSummary[]): string {
           running: 'badge running',
           passed: 'badge passed',
           failed: 'badge failed',
+          timeout: 'badge timeout',
           canceled: 'badge'
         };
         const label = labels[status] || status;
@@ -290,7 +293,7 @@ export function renderJobsScript(initialJobs: JobSummary[]): string {
         const cancelButton = status === 'running'
           ? '<button class="button" style="background: #dc3545; padding: 5px 10px; font-size: 0.85em;" onclick="cancelJob(' + job.id + ')">Cancel</button>'
           : '';
-        const restartButton = status === 'failed' || status === 'canceled'
+        const restartButton = status === 'failed' || status === 'canceled' || status === 'timeout'
           ? '<button class="button" style="background: #17a2b8; padding: 5px 10px; font-size: 0.85em; margin-left: 5px;" onclick="restartJob(' + job.id + ')">Restart</button>'
           : '';
 
