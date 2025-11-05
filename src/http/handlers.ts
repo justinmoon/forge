@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Event as NostrEvent } from "nostr-tools";
+import type { NostrEvent } from "applesauce-core";
 import { isWhitelisted, verifySignedEvent } from "../auth/nostr";
 import { createSession, deleteSession } from "../auth/session";
 import {

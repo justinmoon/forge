@@ -7,7 +7,8 @@
 	},
 	"dependencies": {
 		"ansi-to-html": "^0.7.2",
-		"nostr-tools": "^2.7.2"
+		"applesauce-core": "file:../applesauce/packages/core",
+		"applesauce-signers": "file:../applesauce/packages/signers"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.3",

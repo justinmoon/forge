@@ -1,5 +1,6 @@
-import { verifyEvent, nip19 } from 'nostr-tools';
-import type { Event as NostrEvent } from 'nostr-tools';
+import { Helpers } from 'applesauce-core';
+import type { NostrEvent } from 'applesauce-core';
+const { verifyEvent, npubEncode, npubDecode } = Helpers;
 
 /**
  * Verify a signed Nostr event matches the expected challenge
@@ -44,11 +45,8 @@ export function verifySignedEvent(event: NostrEvent, challenge: string): boolean
  */
 export function npubToHex(npub: string): string {
   try {
-    const decoded = nip19.decode(npub);
-    if (decoded.type !== 'npub') {
-      throw new Error('Not a valid npub');
-    }
-    return decoded.data as string;
+    const decoded = npubDecode(npub);
+    return decoded.pubkey;
   } catch (error) {
     throw new Error(`Invalid npub: ${error}`);
   }
@@ -59,7 +57,7 @@ export function npubToHex(npub: string): string {
  */
 export function hexToNpub(hex: string): string {
   try {
-    return nip19.npubEncode(hex);
+    return npubEncode(hex);
   } catch (error) {
     throw new Error(`Invalid hex pubkey: ${error}`);
   }
