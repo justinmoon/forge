@@ -76,6 +76,16 @@ in
         These keys will be added to the forge user's authorized_keys.
       '';
     };
+
+    allowedPubkeys = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      example = [ "npub1..." "hex-pubkey..." ];
+      description = ''
+        Nostr public keys (npub or hex format) allowed to authenticate to the web UI.
+        Leave empty to disable Nostr authentication.
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
@@ -109,7 +119,7 @@ in
         FORGE_PORT = toString cfg.port;
         FORGE_MERGE_PASSWORD = cfg.mergePassword;
         FORGE_DOMAIN = mkIf (cfg.domain != null) cfg.domain;
-        FORGE_ALLOWED_PUBKEYS = ""; # TODO: Make this configurable
+        FORGE_ALLOWED_PUBKEYS = mkIf (cfg.allowedPubkeys != []) (builtins.concatStringsSep "," cfg.allowedPubkeys);
         NODE_ENV = "production";
         HOME = cfg.dataDir;
       };
