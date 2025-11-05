@@ -21,11 +21,12 @@ export function getConfig(requirePassword: boolean = false): ForgeConfig {
       return key;
     });
 
-  // Require whitelist in production and development, allow empty in test mode
-  if (allowedPubkeys.length === 0 && nodeEnv !== 'test') {
-    throw new Error(
-      'FORGE_ALLOWED_PUBKEYS environment variable must be set with at least one pubkey. ' +
-      'Example: FORGE_ALLOWED_PUBKEYS=npub1... or hex pubkey'
+  // Warn if no pubkeys configured in production, but don't fail
+  // This allows forge to run without nostr auth if desired
+  if (allowedPubkeys.length === 0 && nodeEnv === 'production') {
+    console.warn(
+      'WARNING: FORGE_ALLOWED_PUBKEYS not set. Nostr authentication will not be available. ' +
+      'Set FORGE_ALLOWED_PUBKEYS=npub1... to enable it.'
     );
   }
 

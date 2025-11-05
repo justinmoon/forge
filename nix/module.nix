@@ -109,6 +109,7 @@ in
         FORGE_PORT = toString cfg.port;
         FORGE_MERGE_PASSWORD = cfg.mergePassword;
         FORGE_DOMAIN = mkIf (cfg.domain != null) cfg.domain;
+        FORGE_ALLOWED_PUBKEYS = ""; # TODO: Make this configurable
         NODE_ENV = "production";
         HOME = cfg.dataDir;
       };
