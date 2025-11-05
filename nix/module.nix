@@ -85,7 +85,7 @@ in
       home = cfg.dataDir;
       createHome = true;
       description = "forge service user";
-      shell = "${pkgs.git}/bin/git-shell";
+      shell = "${pkgs.bash}/bin/bash";
       openssh.authorizedKeys.keys = mkIf (cfg.sshKeys != []) cfg.sshKeys;
     };
 
