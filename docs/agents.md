@@ -27,7 +27,7 @@ View at: `https://forge.justinmoon.com/r/<repo>`
 ssh <host> 'sudo -u forge forge jobs list'              # List recent jobs
 ssh <host> 'sudo -u forge forge jobs show <job-id>'     # Show job details
 ssh <host> 'sudo -u forge forge status <repo> <branch>' # Check MR status
-ssh <host> 'sudo -u forge forge watch-ci <repo> <branch>' # Block until CI completes
+ssh <host> 'sudo -u forge forge wait-ci <repo> <branch>' # Block until CI completes
 
 # Or check systemd logs:
 ssh <host> 'sudo journalctl -u forge.service -f'
