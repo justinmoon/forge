@@ -77,7 +77,9 @@ function renderJobItem(
 		: "";
 
 	const restartButton =
-		job.status === "failed" || job.status === "canceled" || job.status === "timeout"
+		job.status === "failed" ||
+		job.status === "canceled" ||
+		job.status === "timeout"
 			? `
       <button class="button" style="background: #17a2b8; padding: 5px 10px; font-size: 0.85em; margin-left: 5px;" onclick="restartJob(${job.id})">
         Restart
