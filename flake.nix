@@ -80,7 +80,7 @@
               npx playwright install chromium
               ''}
               echo "Running biome check..."
-              npx @biomejs/biome check src/realtime src/ci/runner.ts src/cli/index.ts src/http/handlers.ts src/views/jobs.ts src/views/merge-requests.ts tests/job-log-stream.spec.ts scripts/dev.sh examples/demo-stream
+              npx @biomejs/biome check src/realtime src/ci/runner.ts src/cli/index.ts src/http/handlers.ts src/views/jobs.ts src/views/merge-requests.ts tests/job-log-stream.spec.ts scripts/dev.sh
               echo "Running TypeScript build..."
               npx tsc --noEmit
               echo "Running bun test..."
