@@ -1,0 +1,1 @@
+- should have a nice system for blocking direct merges to master without going through ci.
