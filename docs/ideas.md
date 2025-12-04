@@ -1,1 +1,5 @@
 - should have a nice system for blocking direct merges to master without going through ci.
+- branch protection rules (forgejo has)
+- per-repo default branch (forgejo has)
+- scheduled jobs (nix run .#nightly)
+- artifact service so ci run survive restarts

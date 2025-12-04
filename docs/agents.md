@@ -21,22 +21,14 @@ View at: `https://forge.justinmoon.com/r/<repo>`
 
 ### CLI
 
-**Important**: The forge CLI must be run as the `forge` user (the service account that owns the database and repositories). Use `sudo -u forge`:
+SSH as the `forge` user to run CLI commands:
 
 ```bash
-ssh <host> 'sudo -u forge forge jobs list'              # List recent jobs
-ssh <host> 'sudo -u forge forge jobs show <job-id>'     # Show job details
-ssh <host> 'sudo -u forge forge status <repo> <branch>' # Check MR status
-ssh <host> 'sudo -u forge forge wait-ci <repo> <branch>' # Block until CI completes
-
-# Or check systemd logs:
-ssh <host> 'sudo journalctl -u forge.service -f'
+ssh forge@hetzner 'forge jobs list'              # List recent jobs
+ssh forge@hetzner 'forge jobs show <job-id>'     # Show job details
+ssh forge@hetzner 'forge status <repo> <branch>' # Check MR status
+ssh forge@hetzner 'forge wait-ci <repo> <branch>' # Block until CI completes
 ```
-
-**Why `sudo -u forge`?**
-- The forge database and repositories are owned by the `forge` user
-- The `forge` user runs with a restricted `git-shell` (can't SSH directly)
-- Regular users don't have read access to `/var/lib/forge`
 
 ## Configuring CI
 
@@ -154,10 +146,8 @@ git push origin feature-x
 ### Check Why CI Failed
 ```bash
 # Web: https://forge.justinmoon.com/jobs/<job-id>
-# Or SSH:
-ssh host 'sudo -u forge cat /var/lib/forge/logs/<repo>/<commit>.log'
 # Or use the CLI:
-ssh host 'sudo -u forge forge jobs show <job-id>'
+ssh forge@hetzner 'forge jobs show <job-id>'
 ```
 
 ### Cancel Running Job
