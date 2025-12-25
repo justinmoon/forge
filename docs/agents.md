@@ -34,7 +34,15 @@ ssh forge@hetzner 'forge wait-ci <repo> <branch>' # Block until CI completes
 
 ### Pre-Merge (runs on feature branch pushes)
 
-Add to `flake.nix`:
+Add a `pre-merge` recipe to your `justfile` (recommended):
+
+```just
+pre-merge:
+  set -e
+  nix flake check
+```
+
+Or expose a Nix app in `flake.nix`:
 
 ```nix
 outputs = { self, nixpkgs, ... }: {
@@ -52,7 +60,15 @@ outputs = { self, nixpkgs, ... }: {
 
 ### Post-Merge (runs on master updates)
 
-Add to `flake.nix`:
+Add a `post-merge` recipe to your `justfile`:
+
+```just
+post-merge:
+  set -e
+  echo "Deployed successfully"
+```
+
+Or expose a Nix app in `flake.nix`:
 
 ```nix
 outputs = { self, nixpkgs, ... }: {

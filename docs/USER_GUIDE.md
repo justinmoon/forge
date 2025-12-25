@@ -4,7 +4,23 @@ Push branches → pre-merge checks run → merge → post-merge actions run.
 
 ## Setup
 
-Create `flake.nix` in your repo:
+Add a `justfile` (recommended):
+
+```just
+pre-merge:
+  set -e
+  echo "Running tests..."
+  bun test
+  echo "✓ Tests passed"
+
+post-merge:
+  set -e
+  echo "Deploying..."
+  ./deploy.sh
+  echo "✓ Deployed"
+```
+
+Or expose Nix apps in `flake.nix`:
 
 ```nix
 {
@@ -43,8 +59,12 @@ Create `flake.nix` in your repo:
 
 Test locally:
 ```bash
-nix run .#pre-merge
-nix run .#post-merge
+just pre-merge
+just post-merge
+
+# Or with Nix apps:
+# nix run .#pre-merge
+# nix run .#post-merge
 ```
 
 ## Workflow
@@ -125,7 +145,7 @@ nix run .#post-merge
 ```
 
 **Common issues:**
-- **"error: flake 'git+file://...' does not provide attribute 'apps.x86_64-linux.pre-merge'"** → Add `pre-merge` to your flake.nix
+- **"error: flake 'git+file://...' does not provide attribute 'apps.x86_64-linux.pre-merge'"** → Add `pre-merge` to your flake.nix, or add a `pre-merge` recipe to your `justfile`
 - **Timeout** → Job took >5min, optimize or contact admin
 - **Post-merge fails** → Doesn't block merge (already happened), check logs
 

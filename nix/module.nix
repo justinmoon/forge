@@ -135,7 +135,7 @@ in
         HOME = cfg.dataDir;
       };
 
-      path = [ gitPkg bashPkg coreutils pkgs.nix ];
+      path = [ gitPkg bashPkg coreutils pkgs.nix pkgs.just ];
       
       serviceConfig = {
         Type = "simple";
@@ -176,6 +176,6 @@ in
     };
 
     # Ensure Git and forge CLI are available system-wide
-    environment.systemPackages = [ pkgs.git cfg.package ];
+    environment.systemPackages = [ pkgs.git pkgs.just cfg.package ];
   };
 }

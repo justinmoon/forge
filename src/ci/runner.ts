@@ -28,6 +28,12 @@ export interface RunningJob {
 	startTime: number;
 }
 
+interface CICommand {
+	command: string;
+	args: string[];
+	label: string;
+}
+
 const runningJobs = new Map<number, RunningJob>();
 let timeoutMonitorInterval: NodeJS.Timeout | null = null;
 
@@ -58,6 +64,63 @@ function flakeAppExists(worktreePath: string, app: string): boolean {
 	});
 
 	return result.status === 0;
+}
+
+function justRecipeExists(worktreePath: string, recipe: string): boolean {
+	const result = spawnSync("just", ["--list"], {
+		cwd: worktreePath,
+		encoding: "utf-8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+
+	if (result.error || result.status !== 0 || !result.stdout) {
+		return false;
+	}
+
+	for (const line of result.stdout.split(/\r?\n/)) {
+		const match = line.match(/^\s*([A-Za-z0-9_.-]+)\b/);
+		if (match?.[1] === recipe) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function getPreMergeCommand(worktreePath: string): CICommand {
+	if (justRecipeExists(worktreePath, "pre-merge")) {
+		return {
+			command: "just",
+			args: ["pre-merge"],
+			label: "just pre-merge",
+		};
+	}
+
+	return {
+		command: "nix",
+		args: ["run", ".#pre-merge"],
+		label: "nix run .#pre-merge",
+	};
+}
+
+function getPostMergeCommand(worktreePath: string): CICommand | null {
+	if (justRecipeExists(worktreePath, "post-merge")) {
+		return {
+			command: "just",
+			args: ["post-merge"],
+			label: "just post-merge",
+		};
+	}
+
+	if (flakeAppExists(worktreePath, "post-merge")) {
+		return {
+			command: "nix",
+			args: ["run", ".#post-merge"],
+			label: "nix run .#post-merge",
+		};
+	}
+
+	return null;
 }
 
 export function isJobRunning(jobId: number): boolean {
@@ -239,8 +302,11 @@ export async function runPreMergeJob(
 
 		const startTime = Date.now();
 
-		// Run nix run .#pre-merge
-		const ciProcess = spawn("nix", ["run", ".#pre-merge"], {
+		const ciCommand = getPreMergeCommand(worktreePath);
+		logStream.write(`Forge: running ${ciCommand.label}\n`);
+		appendJobLogChunk(jobId, `Forge: running ${ciCommand.label}\n`);
+
+		const ciProcess = spawn(ciCommand.command, ciCommand.args, {
 			cwd: worktreePath,
 			env: {
 				...process.env,
@@ -445,9 +511,10 @@ export async function runPostMergeJob(
 		const logStream = createWriteStream(logPath, { flags: "w" });
 		seedJobLog(jobId, "");
 
-		if (!flakeAppExists(worktreePath, "post-merge")) {
+		const ciCommand = getPostMergeCommand(worktreePath);
+		if (!ciCommand) {
 			const message =
-				"post-merge app (.#post-merge) not found; skipping post-merge CI.\n";
+				"post-merge command not found; expected `just post-merge` or `nix run .#post-merge`.\n";
 			logStream.write(message);
 			logStream.end();
 			appendJobLogChunk(jobId, message);
@@ -479,8 +546,10 @@ export async function runPostMergeJob(
 
 		const startTime = Date.now();
 
-		// Run nix run .#post-merge
-		const postMergeProcess = spawn("nix", ["run", ".#post-merge"], {
+		logStream.write(`Forge: running ${ciCommand.label}\n`);
+		appendJobLogChunk(jobId, `Forge: running ${ciCommand.label}\n`);
+
+		const postMergeProcess = spawn(ciCommand.command, ciCommand.args, {
 			cwd: worktreePath,
 			env: { ...process.env },
 		});

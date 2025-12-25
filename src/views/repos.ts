@@ -79,7 +79,7 @@ export function renderRepoCreated(repoName: string, cloneUrl: string, webUrl: st
     <h3>Next steps:</h3>
     <ol>
       <li>Clone the repository locally</li>
-      <li>Add a <code>flake.nix</code> with <code>apps.x86_64-linux.pre-merge</code> for CI</li>
+      <li>Add a <code>justfile</code> recipe named <code>pre-merge</code> or expose <code>.#pre-merge</code> in <code>flake.nix</code> for CI</li>
       <li>Push a feature branch to create a merge request</li>
     </ol>
     

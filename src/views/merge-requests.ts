@@ -310,8 +310,8 @@ export function renderMRDetail(
 		ciAlert = `
       <div class="alert warning">
         <strong>CI not configured</strong>
-        <p>This repository does not expose <code>.#pre-merge</code> in its <code>flake.nix</code>, so Forge cannot run CI yet.</p>
-        <p>Add a <code>pre-merge</code> app (for example: <code>apps.pre-merge = { program = &quot;…&quot;; };</code>) and push a commit to enable merging.</p>
+        <p>This repository does not expose a <code>pre-merge</code> command for Forge to run.</p>
+        <p>Add a <code>pre-merge</code> recipe to your <code>justfile</code> or expose <code>.#pre-merge</code> in <code>flake.nix</code>, then push a commit to enable merging.</p>
       </div>
     `;
 	} else if (mr.ciStatus === "running") {

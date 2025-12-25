@@ -6,7 +6,7 @@ A minimal, single-tenant Git forge with merge requests and CI.
 
 - Lists Git repositories and branches
 - Shows merge requests with diff previews
-- Runs CI jobs via `nix run .#ci`
+- Runs CI jobs via `just pre-merge` (or `nix run .#pre-merge`)
 - Merges branches after CI passes
 - Auto-merges when commits include `Forge-Auto-Merge: true` trailer
 

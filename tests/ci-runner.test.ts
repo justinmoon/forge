@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs';
+import { writeFileSync, existsSync, readFileSync, mkdirSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { createTestContext, createBareRepo, createWorkRepo, seedRepo, createFeatureBranch } from './helpers';
 import { insertCIJob, getCIJob, updateCIJob } from '../src/db';
@@ -58,6 +58,66 @@ describe('CI Runner', () => {
     const status = JSON.parse(statusContent);
     expect(status.jobId).toBe(jobId);
     expect(status.status).toMatch(/passed|failed/);
+  }, 30000);
+
+  test('CI runner prefers just when a pre-merge recipe exists', async () => {
+    const { execSync } = require('child_process');
+    const fakeBinDir = join(ctx.tempDir, 'fake-bin');
+    mkdirSync(fakeBinDir, { recursive: true });
+
+    const fakeJustPath = join(fakeBinDir, 'just');
+    writeFileSync(
+      fakeJustPath,
+      '#!/usr/bin/env bash\n' +
+        'set -euo pipefail\n' +
+        'if [[ "$1" == "--list" ]]; then\n' +
+        '  echo "Available recipes:"\n' +
+        '  echo "  pre-merge"\n' +
+        '  exit 0\n' +
+        'fi\n' +
+        'if [[ "$1" == "pre-merge" ]]; then\n' +
+        '  echo "just pre-merge ran"\n' +
+        '  exit 0\n' +
+        'fi\n' +
+        'echo "unexpected args: $*" >&2\n' +
+        'exit 1\n'
+    );
+    chmodSync(fakeJustPath, 0o755);
+
+    const originalPath = process.env.PATH ?? '';
+    process.env.PATH = `${fakeBinDir}:${originalPath}`;
+
+    try {
+      execSync('git checkout -b just-feature', { cwd: workRepoPath, stdio: 'pipe' });
+      writeFileSync(join(workRepoPath, 'justfile'), 'pre-merge:\n  echo "ok"\n');
+      execSync('git add justfile', { cwd: workRepoPath, stdio: 'pipe' });
+      execSync('git commit -m "Add justfile"', { cwd: workRepoPath, stdio: 'pipe' });
+      execSync('git push origin just-feature', { cwd: workRepoPath, stdio: 'pipe' });
+
+      const headCommit = execSync('git rev-parse just-feature', {
+        cwd: bareRepoPath,
+        encoding: 'utf-8',
+      }).trim();
+
+      const logPath = join(ctx.config.logsPath, 'test-repo', `${headCommit}.log`);
+
+      const jobId = insertCIJob({
+        repo: 'test-repo',
+        branch: 'just-feature',
+        headCommit,
+        status: 'pending',
+        logPath,
+        startedAt: new Date(),
+      });
+
+      await runPreMergeJob(ctx.config, jobId, 'test-repo', 'just-feature', headCommit);
+
+      const logContent = readFileSync(logPath, 'utf-8');
+      expect(logContent).toContain('Forge: running just pre-merge');
+      expect(logContent).toContain('just pre-merge ran');
+    } finally {
+      process.env.PATH = originalPath;
+    }
   }, 30000);
 
   test('job cancellation works', async () => {
