@@ -16,6 +16,10 @@ export GIT_COMMITTER_EMAIL="forge@forge.justinmoon.com"
 
 echo "==> Post-merge: Deploying forge commit $FORGE_COMMIT to configs"
 
+# Mirror to GitHub first (so configs can use github:justinmoon/forge as input)
+echo "==> Mirroring to GitHub"
+git push --mirror git@github.com:justinmoon/forge.git
+
 # Clone configs repo
 echo "==> Cloning configs repo"
 git clone "$CONFIGS_REPO" "$WORK_DIR"
