@@ -11,7 +11,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         binPath = pkgs.lib.makeBinPath (
-          [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.nix pkgs.bun ]
+          [ pkgs.bash pkgs.coreutils pkgs.git pkgs.nodejs pkgs.nix pkgs.bun pkgs.biome ]
           ++ pkgs.lib.optional pkgs.stdenv.isLinux pkgs.chromium
         );
         
@@ -40,7 +40,7 @@
           '';
         };
 
-        # Minimal CI container image with just, git, nix, and basic tools
+        # Minimal CI container image with just, git, nix, biome, and basic tools
         ciImage = pkgs.dockerTools.buildLayeredImage {
           name = "forge-ci";
           tag = "latest";
@@ -55,6 +55,7 @@
             pkgs.gnugrep
             pkgs.gnutar
             pkgs.gzip
+            pkgs.biome
           ];
 
           extraCommands = ''
@@ -77,22 +78,14 @@
             # Create FHS compatibility symlinks for scripts with shebangs like #!/usr/bin/env
             mkdir -p usr/bin
             ln -s ${pkgs.coreutils}/bin/env usr/bin/env
-
-            # Create dynamic linker symlinks for running unpatched binaries (like biome from npm)
-            mkdir -p lib64
-            ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 lib64/ld-linux-x86-64.so.2
           '';
 
           config = {
             Env = [
               "HOME=/root"
               "USER=root"
-              "PATH=/bin:/usr/bin:${pkgs.nix}/bin:${pkgs.git}/bin:${pkgs.just}/bin"
+              "PATH=/bin:/usr/bin:${pkgs.nix}/bin:${pkgs.git}/bin:${pkgs.just}/bin:${pkgs.biome}/bin"
               "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-              # NIX_LD provides the dynamic linker for unpatched binaries
-              "NIX_LD=${pkgs.glibc}/lib/ld-linux-x86-64.so.2"
-              # NIX_LD_LIBRARY_PATH provides common shared libraries
-              "NIX_LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.glibc pkgs.gcc.cc.lib ]}"
             ];
             WorkingDir = "/work";
             # Don't set User - let --userns=keep-id handle UID mapping
@@ -140,7 +133,7 @@
               npx playwright install chromium
               ''}
               echo "Running biome check..."
-              npx @biomejs/biome check src/realtime src/ci/runner.ts src/cli/index.ts src/http/handlers.ts src/views/jobs.ts src/views/merge-requests.ts tests/job-log-stream.spec.ts scripts/dev.sh
+              biome check src/realtime src/ci/runner.ts src/cli/index.ts src/http/handlers.ts src/views/jobs.ts src/views/merge-requests.ts tests/job-log-stream.spec.ts scripts/dev.sh
               echo "Running TypeScript build..."
               npx tsc --noEmit
               echo "Running bun test..."
