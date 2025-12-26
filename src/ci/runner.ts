@@ -71,6 +71,7 @@ function justRecipeExists(worktreePath: string, recipe: string): boolean {
 		cwd: worktreePath,
 		encoding: "utf-8",
 		stdio: ["ignore", "pipe", "pipe"],
+		env: process.env,
 	});
 
 	if (result.error || result.status !== 0 || !result.stdout) {
