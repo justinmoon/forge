@@ -232,7 +232,7 @@ async function runJobInContainer(
 		"--mount",
 		"type=bind,source=/nix,target=/nix,readonly",
 		"--mount",
-		`type=tmpfs,target=/tmp,tmpfs-size=${options.tmpfsSize}`,
+		`type=tmpfs,target=/tmp,tmpfs-size=${options.tmpfsSize},U`,
 		"--env",
 		"HOME=/tmp/home",
 		"--env",
