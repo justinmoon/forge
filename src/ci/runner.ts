@@ -494,8 +494,10 @@ export async function runPreMergeJob(
 
 		if (useClone) {
 			// Clone the repo locally and checkout the commit
+			// Use --no-hardlinks because the work dir may be on a different filesystem
+			// or have restricted permissions that prevent hardlink creation
 			const cloneResult = execGit(
-				["clone", "--local", "--no-checkout", repoPath, worktreePath],
+				["clone", "--local", "--no-hardlinks", "--no-checkout", repoPath, worktreePath],
 				{ cwd: config.reposPath },
 			);
 			if (!cloneResult.success) {
@@ -780,8 +782,10 @@ export async function runPostMergeJob(
 
 		if (useClone) {
 			// Clone the repo locally and checkout the commit
+			// Use --no-hardlinks because the work dir may be on a different filesystem
+			// or have restricted permissions that prevent hardlink creation
 			const cloneResult = execGit(
-				["clone", "--local", "--no-checkout", repoPath, worktreePath],
+				["clone", "--local", "--no-hardlinks", "--no-checkout", repoPath, worktreePath],
 				{ cwd: config.reposPath },
 			);
 			if (!cloneResult.success) {
