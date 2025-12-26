@@ -176,9 +176,9 @@ in
         ReadWritePaths = [ cfg.dataDir ];
         NoNewPrivileges = !cfg.containerizedCI; # Podman needs new privileges for user namespaces
         PrivateDevices = !cfg.containerizedCI; # Podman needs /dev/net/tun for slirp4netns
-        ProtectKernelTunables = true;
+        ProtectKernelTunables = !cfg.containerizedCI; # Podman may need kernel tuning
         ProtectKernelModules = true;
-        ProtectControlGroups = true;
+        ProtectControlGroups = !cfg.containerizedCI; # Podman needs cgroup access
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ]
           ++ optionals cfg.containerizedCI [ "AF_NETLINK" ];
         RestrictNamespaces = !cfg.containerizedCI; # Podman needs user/network namespaces
