@@ -158,7 +158,8 @@ in
       };
 
       path = [ gitPkg bashPkg coreutils pkgs.nix pkgs.just ]
-        ++ optionals cfg.containerizedCI [ pkgs.podman pkgs.slirp4netns pkgs.shadow ];
+        # /run/wrappers provides setuid newuidmap/newgidmap on NixOS
+        ++ optionals cfg.containerizedCI [ pkgs.podman pkgs.slirp4netns "/run/wrappers" ];
       
       serviceConfig = {
         Type = "simple";
