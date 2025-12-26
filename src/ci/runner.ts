@@ -233,10 +233,8 @@ async function runJobInContainer(
 		"type=bind,source=/nix,target=/nix,readonly",
 		"--mount",
 		`type=tmpfs,target=/tmp,tmpfs-size=${options.tmpfsSize}`,
-		"--mount",
-		`type=tmpfs,target=/root,tmpfs-size=${options.tmpfsSize}`,
 		"--env",
-		"HOME=/root",
+		"HOME=/tmp",
 		"--env",
 		`FORGE_REPO=${options.repo}`,
 		"--env",
@@ -248,7 +246,9 @@ async function runJobInContainer(
 		options.image,
 		"bash",
 		"-lc",
-		`cd /work && ${options.ciCommand.command} ${options.ciCommand.args.join(" ")}`,
+		// Configure git to trust the mounted directory and use /tmp for home
+		// to avoid ownership issues with --userns=keep-id
+		`git config --global --add safe.directory /work && cd /work && ${options.ciCommand.command} ${options.ciCommand.args.join(" ")}`,
 	];
 
 	const containerProcess = spawn("podman", podmanArgs, {
