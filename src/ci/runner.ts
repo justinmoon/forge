@@ -224,7 +224,7 @@ async function runJobInContainer(
 		"--name",
 		containerName,
 		`--network=${options.network}`,
-		"--userns=keep-id",
+		"--user=ci", // Run as the ci user defined in the container image
 		"-w",
 		"/work",
 		"--mount",
