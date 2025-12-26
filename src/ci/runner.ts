@@ -234,7 +234,7 @@ async function runJobInContainer(
 		"--mount",
 		`type=tmpfs,target=/tmp,tmpfs-size=${options.tmpfsSize}`,
 		"--env",
-		"HOME=/tmp",
+		"HOME=/work/.forge-home",
 		"--env",
 		`FORGE_REPO=${options.repo}`,
 		"--env",
@@ -246,9 +246,9 @@ async function runJobInContainer(
 		options.image,
 		"bash",
 		"-lc",
-		// Configure git to trust the mounted directory and use /tmp for home
-		// to avoid ownership issues with --userns=keep-id
-		`git config --global --add safe.directory /work && cd /work && ${options.ciCommand.command} ${options.ciCommand.args.join(" ")}`,
+		// Create home dir, configure git to trust the mounted directory
+		// HOME=/work/.forge-home is writable (same owner as /work)
+		`mkdir -p /work/.forge-home && git config --global --add safe.directory /work && cd /work && ${options.ciCommand.command} ${options.ciCommand.args.join(" ")}`,
 	];
 
 	const containerProcess = spawn("podman", podmanArgs, {
