@@ -4,3 +4,4 @@ tests/e2e/
 test-results/
 worktrees/
 result
+# CI test
