@@ -73,6 +73,10 @@
             mkdir -p etc/nix
             echo 'experimental-features = nix-command flakes' > etc/nix/nix.conf
             echo 'sandbox = false' >> etc/nix/nix.conf
+
+            # Create FHS compatibility symlinks for scripts with shebangs like #!/usr/bin/env
+            mkdir -p usr/bin
+            ln -s ${pkgs.coreutils}/bin/env usr/bin/env
           '';
 
           config = {
