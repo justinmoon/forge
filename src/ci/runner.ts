@@ -36,7 +36,12 @@ interface CICommand {
 }
 
 const runningJobs = new Map<number, RunningJob>();
-const runningContainers = new Map<number, string>(); // jobId -> containerName
+interface ContainerInfo {
+	name: string;
+	storageRoot: string;
+	runRoot: string;
+}
+const runningContainers = new Map<number, ContainerInfo>(); // jobId -> container info
 let timeoutMonitorInterval: NodeJS.Timeout | null = null;
 const PG_PORT_BASE = 20000;
 const PG_PORT_RANGE = 20000;
@@ -199,6 +204,8 @@ interface ContainerJobOptions {
 	image: string;
 	network: string;
 	tmpfsSize: string;
+	storageRoot: string; // Podman storage root (--root)
+	runRoot: string; // Podman runtime root (--runroot)
 	onOutput: (chunk: string) => void;
 }
 
@@ -207,7 +214,11 @@ async function runJobInContainer(
 ): Promise<number> {
 	const containerName = getContainerName(options.jobId);
 
+	// --root and --runroot must come before the "run" subcommand
+	// This allows rootless podman to work without XDG_RUNTIME_DIR
 	const podmanArgs = [
+		`--root=${options.storageRoot}`,
+		`--runroot=${options.runRoot}`,
 		"run",
 		"--rm",
 		"--name",
@@ -244,7 +255,11 @@ async function runJobInContainer(
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 
-	runningContainers.set(options.jobId, containerName);
+	runningContainers.set(options.jobId, {
+		name: containerName,
+		storageRoot: options.storageRoot,
+		runRoot: options.runRoot,
+	});
 
 	containerProcess.stdout?.on("data", (data) => {
 		options.onOutput(data.toString());
@@ -268,19 +283,28 @@ async function runJobInContainer(
 }
 
 function killContainer(jobId: number): void {
-	const containerName = runningContainers.get(jobId);
-	if (!containerName) {
+	const containerInfo = runningContainers.get(jobId);
+	if (!containerInfo) {
 		return;
 	}
 
+	const storageArgs = [
+		`--root=${containerInfo.storageRoot}`,
+		`--runroot=${containerInfo.runRoot}`,
+	];
+
 	try {
-		spawnSync("podman", ["kill", containerName], { stdio: "ignore" });
+		spawnSync("podman", [...storageArgs, "kill", containerInfo.name], {
+			stdio: "ignore",
+		});
 	} catch (_err) {
 		// Container may already be stopped
 	}
 
 	try {
-		spawnSync("podman", ["rm", "-f", containerName], { stdio: "ignore" });
+		spawnSync("podman", [...storageArgs, "rm", "-f", containerInfo.name], {
+			stdio: "ignore",
+		});
 	} catch (_err) {
 		// Container may already be removed
 	}
@@ -498,6 +522,8 @@ export async function runPreMergeJob(
 				image: config.container.image,
 				network: config.container.network,
 				tmpfsSize: config.container.tmpfsSize,
+				storageRoot: config.container.storageRoot,
+				runRoot: config.container.runRoot,
 				onOutput: (chunk) => {
 					logStream.write(chunk);
 					appendJobLogChunk(jobId, chunk);
@@ -785,6 +811,8 @@ export async function runPostMergeJob(
 				image: config.container.image,
 				network: config.container.network,
 				tmpfsSize: config.container.tmpfsSize,
+				storageRoot: config.container.storageRoot,
+				runRoot: config.container.runRoot,
 				onOutput: (chunk) => {
 					logStream.write(chunk);
 					appendJobLogChunk(jobId, chunk);

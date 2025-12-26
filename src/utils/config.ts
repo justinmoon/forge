@@ -80,12 +80,17 @@ export function getConfig(requirePassword: boolean = false): ForgeConfig {
   }
 
   // Container configuration for CI jobs
+  // Storage paths allow rootless podman to work without XDG_RUNTIME_DIR
+  const containerStorageRoot = process.env.FORGE_CI_STORAGE_ROOT || join(dataDir, '.containers/storage');
+  const containerRunRoot = process.env.FORGE_CI_RUN_ROOT || join(dataDir, '.containers/run');
   const container = {
     enabled: process.env.FORGE_CI_CONTAINER === '1',
     image: process.env.FORGE_CI_IMAGE || 'forge-ci:latest',
     network: process.env.FORGE_CI_NETWORK || 'slirp4netns',
     tmpfsSize: process.env.FORGE_CI_TMPFS_SIZE || '2G',
     keepWorkdir: process.env.FORGE_CI_KEEP_WORKDIR === '1',
+    storageRoot: containerStorageRoot,
+    runRoot: containerRunRoot,
   };
 
   if (container.enabled) {

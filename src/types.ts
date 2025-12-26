@@ -53,6 +53,8 @@ export interface ContainerConfig {
   network: string;
   tmpfsSize: string;
   keepWorkdir: boolean;
+  storageRoot: string; // Podman storage root (--root)
+  runRoot: string; // Podman runtime root (--runroot)
 }
 
 export interface ForgeConfig {

@@ -40,6 +40,8 @@ export function createTestContext(): TestContext {
       network: 'slirp4netns',
       tmpfsSize: '2G',
       keepWorkdir: false,
+      storageRoot: join(tempDir, '.containers/storage'),
+      runRoot: join(tempDir, '.containers/run'),
     },
   };
 
