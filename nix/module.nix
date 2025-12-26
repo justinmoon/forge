@@ -158,7 +158,7 @@ in
       };
 
       path = [ gitPkg bashPkg coreutils pkgs.nix pkgs.just ]
-        ++ optionals cfg.containerizedCI [ pkgs.podman pkgs.slirp4netns ];
+        ++ optionals cfg.containerizedCI [ pkgs.podman pkgs.slirp4netns pkgs.shadow ];
       
       serviceConfig = {
         Type = "simple";
