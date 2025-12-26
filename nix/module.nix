@@ -174,7 +174,7 @@ in
         ProtectHome = true;
         ReadWritePaths = [ cfg.dataDir ];
         NoNewPrivileges = !cfg.containerizedCI; # Podman needs new privileges for user namespaces
-        PrivateDevices = true;
+        PrivateDevices = !cfg.containerizedCI; # Podman needs /dev/net/tun for slirp4netns
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;

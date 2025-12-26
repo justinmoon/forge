@@ -223,10 +223,8 @@ async function runJobInContainer(
 		"--rm",
 		"--name",
 		containerName,
-		// Use 'none' network to avoid slirp4netns /dev/net/tun issues
-		// CI jobs typically don't need external network access
-		"--network=none",
-		"--user=ci", // Run as the ci user defined in the container image
+		`--network=${options.network}`,
+		"--userns=keep-id", // Map host UID to same UID in container
 		"-w",
 		"/work",
 		"--mount",
@@ -236,9 +234,9 @@ async function runJobInContainer(
 		"--mount",
 		`type=tmpfs,target=/tmp,tmpfs-size=${options.tmpfsSize}`,
 		"--mount",
-		`type=tmpfs,target=/home/ci,tmpfs-size=${options.tmpfsSize}`,
+		`type=tmpfs,target=/root,tmpfs-size=${options.tmpfsSize}`,
 		"--env",
-		"HOME=/home/ci",
+		"HOME=/root",
 		"--env",
 		`FORGE_REPO=${options.repo}`,
 		"--env",

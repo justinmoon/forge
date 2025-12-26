@@ -58,16 +58,13 @@
           ];
 
           extraCommands = ''
-            # Create ci user home directory
-            mkdir -p home/ci
-            mkdir -p tmp
-            mkdir -p etc
+            # Create directories
+            mkdir -p root tmp etc work
 
-            # Create minimal passwd/group for ci user (uid 1000)
+            # Minimal passwd/group - with --userns=keep-id, host UID maps to container
+            # Use root user in container; podman maps it to host user
             echo 'root:x:0:0:root:/root:/bin/bash' > etc/passwd
-            echo 'ci:x:1000:1000:CI User:/home/ci:/bin/bash' >> etc/passwd
             echo 'root:x:0:' > etc/group
-            echo 'ci:x:1000:' >> etc/group
 
             # NSS config for user lookups
             echo 'hosts: files dns' > etc/nsswitch.conf
@@ -80,13 +77,13 @@
 
           config = {
             Env = [
-              "HOME=/home/ci"
-              "USER=ci"
+              "HOME=/root"
+              "USER=root"
               "PATH=/bin:/usr/bin:${pkgs.nix}/bin:${pkgs.git}/bin:${pkgs.just}/bin"
               "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             ];
             WorkingDir = "/work";
-            User = "1000:1000";
+            # Don't set User - let --userns=keep-id handle UID mapping
           };
         };
 
