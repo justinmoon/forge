@@ -483,17 +483,40 @@ export async function runPreMergeJob(
 	const pgDataPath = join(worktreePath, ".pgdata");
 	const pgLogPath = join(pgDataPath, "postgres.log");
 
+	// For containerized CI, we use git clone instead of worktrees.
+	// Worktrees contain symlinks back to the parent repo which aren't
+	// accessible from inside the container. Clones are self-contained.
+	const useClone = config.container.enabled;
+
 	try {
 		mkdirSync(logDir, { recursive: true });
-		mkdirSync(worktreePath, { recursive: true });
 
-		const worktreeResult = execGit(
-			["worktree", "add", "--force", "--detach", worktreePath, headCommit],
-			{ cwd: repoPath },
-		);
-
-		if (!worktreeResult.success) {
-			throw new Error(`Failed to create worktree: ${worktreeResult.stderr}`);
+		if (useClone) {
+			// Clone the repo locally and checkout the commit
+			const cloneResult = execGit(
+				["clone", "--local", "--no-checkout", repoPath, worktreePath],
+				{ cwd: config.reposPath },
+			);
+			if (!cloneResult.success) {
+				throw new Error(`Failed to clone repo: ${cloneResult.stderr}`);
+			}
+			const checkoutResult = execGit(
+				["checkout", "--detach", headCommit],
+				{ cwd: worktreePath },
+			);
+			if (!checkoutResult.success) {
+				throw new Error(`Failed to checkout commit: ${checkoutResult.stderr}`);
+			}
+		} else {
+			// Use worktrees for direct mode (faster, shares objects)
+			mkdirSync(worktreePath, { recursive: true });
+			const worktreeResult = execGit(
+				["worktree", "add", "--force", "--detach", worktreePath, headCommit],
+				{ cwd: repoPath },
+			);
+			if (!worktreeResult.success) {
+				throw new Error(`Failed to create worktree: ${worktreeResult.stderr}`);
+			}
 		}
 
 		updateCIJob(jobId, { status: "running" });
@@ -681,13 +704,19 @@ export async function runPreMergeJob(
 
 		if (existsSync(worktreePath)) {
 			try {
-				execGit(["worktree", "remove", worktreePath], { cwd: repoPath });
+				if (useClone) {
+					// For clones, just rm -rf the directory
+					rmSync(worktreePath, { recursive: true, force: true });
+				} else {
+					// For worktrees, use git worktree remove
+					execGit(["worktree", "remove", worktreePath], { cwd: repoPath });
+				}
 			} catch (err) {
-				console.error(`Failed to remove worktree ${worktreePath}:`, err);
+				console.error(`Failed to remove ${useClone ? "clone" : "worktree"} ${worktreePath}:`, err);
 				try {
 					rmSync(worktreePath, { recursive: true, force: true });
 				} catch (cleanupErr) {
-					console.error("Failed to cleanup worktree directory:", cleanupErr);
+					console.error("Failed to cleanup directory:", cleanupErr);
 				}
 			}
 		}
@@ -740,17 +769,40 @@ export async function runPostMergeJob(
 	const pgDataPath = join(worktreePath, ".pgdata");
 	const pgLogPath = join(pgDataPath, "postgres.log");
 
+	// For containerized CI, we use git clone instead of worktrees.
+	// Worktrees contain symlinks back to the parent repo which aren't
+	// accessible from inside the container. Clones are self-contained.
+	const useClone = config.container.enabled;
+
 	try {
 		mkdirSync(join(config.logsPath, repo), { recursive: true });
-		mkdirSync(worktreePath, { recursive: true });
 
-		const worktreeResult = execGit(
-			["worktree", "add", "--force", "--detach", worktreePath, mergeCommit],
-			{ cwd: repoPath },
-		);
-
-		if (!worktreeResult.success) {
-			throw new Error(`Failed to create worktree: ${worktreeResult.stderr}`);
+		if (useClone) {
+			// Clone the repo locally and checkout the commit
+			const cloneResult = execGit(
+				["clone", "--local", "--no-checkout", repoPath, worktreePath],
+				{ cwd: config.reposPath },
+			);
+			if (!cloneResult.success) {
+				throw new Error(`Failed to clone repo: ${cloneResult.stderr}`);
+			}
+			const checkoutResult = execGit(
+				["checkout", "--detach", mergeCommit],
+				{ cwd: worktreePath },
+			);
+			if (!checkoutResult.success) {
+				throw new Error(`Failed to checkout commit: ${checkoutResult.stderr}`);
+			}
+		} else {
+			// Use worktrees for direct mode (faster, shares objects)
+			mkdirSync(worktreePath, { recursive: true });
+			const worktreeResult = execGit(
+				["worktree", "add", "--force", "--detach", worktreePath, mergeCommit],
+				{ cwd: repoPath },
+			);
+			if (!worktreeResult.success) {
+				throw new Error(`Failed to create worktree: ${worktreeResult.stderr}`);
+			}
 		}
 
 		updateCIJob(jobId, { status: "running" });
@@ -918,12 +970,25 @@ export async function runPostMergeJob(
 			);
 		}
 
-		try {
-			execGit(["worktree", "remove", "--force", worktreePath], {
-				cwd: repoPath,
-			});
-		} catch (err) {
-			console.error("Failed to remove worktree:", err);
+		if (existsSync(worktreePath)) {
+			try {
+				if (useClone) {
+					// For clones, just rm -rf the directory
+					rmSync(worktreePath, { recursive: true, force: true });
+				} else {
+					// For worktrees, use git worktree remove
+					execGit(["worktree", "remove", "--force", worktreePath], {
+						cwd: repoPath,
+					});
+				}
+			} catch (err) {
+				console.error(`Failed to remove ${useClone ? "clone" : "worktree"}:`, err);
+				try {
+					rmSync(worktreePath, { recursive: true, force: true });
+				} catch (cleanupErr) {
+					console.error("Failed to cleanup directory:", cleanupErr);
+				}
+			}
 		}
 	}
 }
