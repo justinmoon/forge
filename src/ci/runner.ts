@@ -215,11 +215,14 @@ async function runJobInContainer(
 ): Promise<number> {
 	const containerName = getContainerName(options.jobId);
 
-	// --root and --runroot must come before the "run" subcommand
+	// --root, --runroot, and --tmpdir must come before the "run" subcommand
 	// This allows rootless podman to work without XDG_RUNTIME_DIR
+	// --tmpdir is critical: without it, podman tries to use /run/user/<uid>
+	// which doesn't exist for system users without login sessions
 	const podmanArgs = [
 		`--root=${options.storageRoot}`,
 		`--runroot=${options.runRoot}`,
+		`--tmpdir=${options.runRoot}/tmp`,
 		"run",
 		"--rm",
 		"--name",
@@ -292,6 +295,7 @@ function killContainer(jobId: number): void {
 	const storageArgs = [
 		`--root=${containerInfo.storageRoot}`,
 		`--runroot=${containerInfo.runRoot}`,
+		`--tmpdir=${containerInfo.runRoot}/tmp`,
 	];
 
 	try {
