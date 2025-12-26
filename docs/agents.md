@@ -105,17 +105,22 @@ Forge-Auto-Merge: true
 
 ## Merging Manually
 
-Web UI method:
+### CLI (recommended for agents)
+
+SSH access authenticates you, no password needed:
+
+```bash
+ssh forge@hetzner 'forge merge <repo> <branch>'
+```
+
+The command checks CI status, verifies no conflicts, executes the merge, and triggers post-merge.
+
+### Web UI
+
 1. Go to MR page
 2. Wait for CI to pass
 3. Click "Merge to master"
-4. Enter password
-
-API method:
-```bash
-curl -X POST https://forge.justinmoon.com/r/<repo>/mr/<branch>/merge \
-  -H "X-Forge-Password: <password>"
-```
+4. Authenticate with Nostr
 
 ## Repository Structure
 
@@ -178,18 +183,21 @@ forge delete <repo>
 # Go to repo page → Delete link → Confirm
 ```
 
-## Password Authentication
+## Authentication
 
-All destructive operations require password:
-- Creating repositories
-- Deleting repositories  
-- Merging branches
-- Canceling jobs
+### SSH (CLI)
 
-Password sent via:
-- Web forms
-- `X-Forge-Password` header (API)
-- CLI prompts
+SSH access via authorized keys authenticates all CLI operations:
+- `forge merge` - merge branches
+- `forge create` - create repositories
+- `forge delete` - delete repositories
+- `forge cancel-ci` - cancel jobs
+
+No password needed - SSH key is the auth.
+
+### Web UI
+
+Web UI uses Nostr authentication for destructive operations.
 
 ## CI Environment
 
