@@ -8,6 +8,7 @@ import {
 	createWriteStream,
 	existsSync,
 	mkdirSync,
+	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -36,6 +37,65 @@ interface CICommand {
 
 const runningJobs = new Map<number, RunningJob>();
 let timeoutMonitorInterval: NodeJS.Timeout | null = null;
+const PG_PORT_BASE = 20000;
+const PG_PORT_RANGE = 20000;
+
+function getJobPgPort(jobId: number): number {
+	return PG_PORT_BASE + (jobId % PG_PORT_RANGE);
+}
+
+function terminateProcess(child: ChildProcess, signal: NodeJS.Signals): void {
+	if (child.pid && process.platform !== "win32") {
+		try {
+			process.kill(-child.pid, signal);
+			return;
+		} catch (_error) {
+			// Fall back to killing the child only.
+		}
+	}
+	child.kill(signal);
+}
+
+function stopPostgres(pgDataPath: string): void {
+	const pidPath = join(pgDataPath, "postmaster.pid");
+	if (!existsSync(pidPath)) {
+		return;
+	}
+
+	const pgCtlArgs = ["-D", pgDataPath, "stop", "-m", "fast"];
+	const tryPgCtl = (command: string, args: string[]): boolean => {
+		const result = spawnSync(command, args, {
+			stdio: "ignore",
+		});
+		return result.status === 0;
+	};
+
+	if (tryPgCtl("pg_ctl", pgCtlArgs)) {
+		return;
+	}
+
+	tryPgCtl("nix", [
+		"shell",
+		"nixpkgs#postgresql_17",
+		"-c",
+		"pg_ctl",
+		...pgCtlArgs,
+	]);
+
+	if (!existsSync(pidPath)) {
+		return;
+	}
+
+	try {
+		const pidLine = readFileSync(pidPath, "utf-8").split(/\s+/)[0];
+		const pid = Number.parseInt(pidLine, 10);
+		if (!Number.isNaN(pid)) {
+			process.kill(pid, "SIGTERM");
+		}
+	} catch (error) {
+		console.warn("Failed to stop postgres with pid:", error);
+	}
+}
 
 function resolveNixSystem(): string {
 	const archMap: Record<string, string> = {
@@ -154,7 +214,7 @@ export function cancelJob(jobId: number, reason = "canceled"): boolean {
 	}
 
 	try {
-		job.process.kill("SIGTERM");
+		terminateProcess(job.process, "SIGTERM");
 		runningJobs.delete(jobId);
 
 		updateCIJob(jobId, {
@@ -282,6 +342,9 @@ export async function runPreMergeJob(
 	const logDir = join(config.logsPath, repo);
 	const logPath = join(logDir, `${headCommit}.log`);
 	const statusPath = join(logDir, `${headCommit}.status`);
+	const pgPort = getJobPgPort(jobId);
+	const pgDataPath = join(worktreePath, ".pgdata");
+	const pgLogPath = join(pgDataPath, "postgres.log");
 
 	try {
 		mkdirSync(logDir, { recursive: true });
@@ -309,11 +372,17 @@ export async function runPreMergeJob(
 
 		const ciProcess = spawn(ciCommand.command, ciCommand.args, {
 			cwd: worktreePath,
+			detached: true,
 			env: {
 				...process.env,
 				FORGE_REPO: repo,
 				FORGE_BRANCH: branch,
 				FORGE_COMMIT: headCommit,
+				FORGE_JOB_ID: String(jobId),
+				PGPORT: String(pgPort),
+				PG_PORT: String(pgPort),
+				PGDATA: pgDataPath,
+				PGLOGFILE: pgLogPath,
 			},
 		});
 
@@ -436,6 +505,15 @@ export async function runPreMergeJob(
 			console.error("Failed to write log/status files:", writeErr);
 		}
 	} finally {
+		try {
+			stopPostgres(pgDataPath);
+			if (existsSync(pgDataPath)) {
+				rmSync(pgDataPath, { recursive: true, force: true });
+			}
+		} catch (cleanupErr) {
+			console.error(`Failed to clean up postgres data at ${pgDataPath}:`, cleanupErr);
+		}
+
 		if (existsSync(worktreePath)) {
 			try {
 				execGit(["worktree", "remove", worktreePath], { cwd: repoPath });
@@ -493,6 +571,9 @@ export async function runPostMergeJob(
 		repo,
 		`${mergeCommit}-post-merge.status`,
 	);
+	const pgPort = getJobPgPort(jobId);
+	const pgDataPath = join(worktreePath, ".pgdata");
+	const pgLogPath = join(pgDataPath, "postgres.log");
 
 	try {
 		mkdirSync(join(config.logsPath, repo), { recursive: true });
@@ -552,7 +633,15 @@ export async function runPostMergeJob(
 
 		const postMergeProcess = spawn(ciCommand.command, ciCommand.args, {
 			cwd: worktreePath,
-			env: { ...process.env },
+			detached: true,
+			env: {
+				...process.env,
+				FORGE_JOB_ID: String(jobId),
+				PGPORT: String(pgPort),
+				PG_PORT: String(pgPort),
+				PGDATA: pgDataPath,
+				PGLOGFILE: pgLogPath,
+			},
 		});
 
 		runningJobs.set(jobId, {
@@ -626,6 +715,15 @@ export async function runPostMergeJob(
 		});
 		completeJobLog(jobId);
 	} finally {
+		try {
+			stopPostgres(pgDataPath);
+			if (existsSync(pgDataPath)) {
+				rmSync(pgDataPath, { recursive: true, force: true });
+			}
+		} catch (cleanupErr) {
+			console.error(`Failed to clean up postgres data at ${pgDataPath}:`, cleanupErr);
+		}
+
 		try {
 			execGit(["worktree", "remove", "--force", worktreePath], {
 				cwd: repoPath,
