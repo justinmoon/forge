@@ -1,3 +1,4 @@
+// CI Runner - handles containerized and direct job execution
 import {
 	type ChildProcess,
 	execSync,
