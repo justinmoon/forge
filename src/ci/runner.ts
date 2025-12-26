@@ -247,6 +247,7 @@ async function runJobInContainer(
 		"bash",
 		"-lc",
 		// Create home dir on tmpfs, configure git to trust the mounted directory
+		// The :U bind mount option recursively chowns /work for the user namespace
 		`mkdir -p /tmp/home && git config --global --add safe.directory /work && cd /work && ${options.ciCommand.command} ${options.ciCommand.args.join(" ")}`,
 	];
 
