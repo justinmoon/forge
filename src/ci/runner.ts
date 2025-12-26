@@ -511,7 +511,10 @@ export async function runPreMergeJob(
 				rmSync(pgDataPath, { recursive: true, force: true });
 			}
 		} catch (cleanupErr) {
-			console.error(`Failed to clean up postgres data at ${pgDataPath}:`, cleanupErr);
+			console.error(
+				`Failed to clean up postgres data at ${pgDataPath}:`,
+				cleanupErr,
+			);
 		}
 
 		if (existsSync(worktreePath)) {
@@ -721,7 +724,10 @@ export async function runPostMergeJob(
 				rmSync(pgDataPath, { recursive: true, force: true });
 			}
 		} catch (cleanupErr) {
-			console.error(`Failed to clean up postgres data at ${pgDataPath}:`, cleanupErr);
+			console.error(
+				`Failed to clean up postgres data at ${pgDataPath}:`,
+				cleanupErr,
+			);
 		}
 
 		try {
