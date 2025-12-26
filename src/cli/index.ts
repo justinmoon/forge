@@ -1,9 +1,16 @@
 #!/usr/bin/env bun
 
-import { getCPUUsage } from "../ci/runner";
+import { getCPUUsage, runPostMergeJob } from "../ci/runner";
 import { getCIStatus } from "../ci/status";
-import { getLatestCIJob, initDatabase, listCIJobs } from "../db";
+import {
+	deletePreview,
+	getLatestCIJob,
+	initDatabase,
+	insertMergeHistory,
+	listCIJobs,
+} from "../db";
 import { getMergeMetadata } from "../git/merge";
+import { executeMerge } from "../git/merge-execute";
 import { hasAutoMergeTrailer } from "../git/trailers";
 import { getConfig } from "../utils/config";
 import {
@@ -21,10 +28,11 @@ Usage:
   forge [command] [options]
 
 Commands:
-  server                     Start the forge HTTP server (requires FORGE_MERGE_PASSWORD)
+  server                     Start the forge HTTP server
   create <repo>              Create a new repository with post-receive hook
   delete <repo>              Delete a repository (prompts for confirmation)
   status <repo> <branch>     Print MR fields, CI status, and merge eligibility
+  merge <repo> <branch>      Merge a branch to master (requires CI passed)
   wait-ci <repo> <branch>    Block until the latest CI run completes
   cancel-ci <job_id>         Cancel an active CI job
   restart-ci <job_id>        Restart a failed/timeout/canceled CI job
@@ -162,6 +170,78 @@ if (!command) {
 	console.log(
 		`Merge eligible: ${ciStatus === "passed" && !metadata.hasConflicts ? "YES" : "NO"}`,
 	);
+
+	process.exit(0);
+} else if (command === "merge") {
+	const repo = process.argv[3];
+	const branch = process.argv[4];
+
+	if (!repo || !branch) {
+		console.error("Usage: forge merge <repo> <branch>");
+		process.exit(1);
+	}
+
+	const config = getConfig();
+	initDatabase(config.dbPath);
+
+	const repoPath = getRepoPath(config.reposPath, repo);
+	const metadata = getMergeMetadata(repoPath, branch);
+
+	if (!metadata) {
+		console.error(`Branch '${branch}' not found in repo '${repo}'`);
+		process.exit(1);
+	}
+
+	const ciStatus = getCIStatus(
+		config.logsPath,
+		repo,
+		branch,
+		metadata.headCommit,
+	);
+
+	if (ciStatus !== "passed") {
+		console.error(`CI must pass before merging (current status: ${ciStatus})`);
+		process.exit(1);
+	}
+
+	if (metadata.hasConflicts) {
+		console.error("Branch has conflicts with master");
+		process.exit(1);
+	}
+
+	const result = executeMerge(repoPath, branch);
+
+	if (!result.success || !result.mergeCommit) {
+		console.error(`Merge failed: ${result.error || "Unknown error"}`);
+		process.exit(1);
+	}
+
+	const mergeCommit = result.mergeCommit;
+
+	insertMergeHistory({
+		repo,
+		branch,
+		headCommit: metadata.headCommit,
+		mergeCommit,
+		mergedAt: new Date(),
+		ciStatus,
+		ciLogPath: null,
+	});
+
+	// Clean up preview
+	deletePreview(repo, branch);
+
+	console.log(`✓ Merged ${branch} to master`);
+	console.log(`  Merge commit: ${mergeCommit.slice(0, 8)}`);
+
+	// Trigger post-merge job
+	console.log("  Starting post-merge job...");
+	runPostMergeJob(config, repo, mergeCommit).catch((err) => {
+		console.error("Failed to start post-merge job:", err);
+	});
+
+	// Give the job a moment to start before exiting
+	await new Promise((resolve) => setTimeout(resolve, 500));
 
 	process.exit(0);
 } else if (command === "wait-ci") {

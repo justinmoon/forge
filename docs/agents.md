@@ -24,10 +24,10 @@ View at: `https://forge.justinmoon.com/r/<repo>`
 SSH as the `forge` user to run CLI commands:
 
 ```bash
-ssh forge@hetzner 'forge jobs list'              # List recent jobs
-ssh forge@hetzner 'forge jobs show <job-id>'     # Show job details
-ssh forge@hetzner 'forge status <repo> <branch>' # Check MR status
+ssh forge@hetzner 'forge jobs'                    # List recent jobs
+ssh forge@hetzner 'forge status <repo> <branch>'  # Check MR status
 ssh forge@hetzner 'forge wait-ci <repo> <branch>' # Block until CI completes
+ssh forge@hetzner 'forge merge <repo> <branch>'   # Merge branch to master
 ```
 
 ## Configuring CI
