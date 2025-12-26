@@ -348,3 +348,29 @@ function ciJobToEvent(job: CIJob): JobEventPayload {
 		finishedAt: job.finishedAt ? job.finishedAt.toISOString() : null,
 	};
 }
+
+/**
+ * Mark any "running" jobs as "interrupted" on startup.
+ * This handles orphaned jobs from server restarts (e.g., during nixos-rebuild).
+ */
+export function recoverOrphanedJobs(): number {
+	const db = getDatabase();
+	const orphaned = db
+		.query("SELECT id, repo, branch FROM ci_jobs WHERE status = 'running'")
+		.all() as any[];
+
+	if (orphaned.length === 0) {
+		return 0;
+	}
+
+	db.run(
+		`UPDATE ci_jobs SET status = 'interrupted', finished_at = ? WHERE status = 'running'`,
+		[new Date().toISOString()],
+	);
+
+	for (const job of orphaned) {
+		console.log(`Recovered orphaned job ${job.id} (${job.repo}/${job.branch})`);
+	}
+
+	return orphaned.length;
+}
