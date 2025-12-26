@@ -34,6 +34,13 @@ export function createTestContext(): TestContext {
     trustProxy: false, // Tests run without proxy
     jobTimeout: 3600,
     jobTimeoutCheckInterval: 30000,
+    container: {
+      enabled: false,
+      image: 'forge-ci:latest',
+      network: 'slirp4netns',
+      tmpfsSize: '2G',
+      keepWorkdir: false,
+    },
   };
 
   const cleanup = () => {

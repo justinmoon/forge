@@ -113,7 +113,7 @@ describe('CI Runner', () => {
       await runPreMergeJob(ctx.config, jobId, 'test-repo', 'just-feature', headCommit);
 
       const logContent = readFileSync(logPath, 'utf-8');
-      expect(logContent).toContain('Forge: running just pre-merge');
+      expect(logContent).toContain('running just pre-merge');
       expect(logContent).toContain('just pre-merge ran');
     } finally {
       process.env.PATH = originalPath;

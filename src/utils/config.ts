@@ -79,6 +79,19 @@ export function getConfig(requirePassword: boolean = false): ForgeConfig {
     process.exit(1);
   }
 
+  // Container configuration for CI jobs
+  const container = {
+    enabled: process.env.FORGE_CI_CONTAINER === '1',
+    image: process.env.FORGE_CI_IMAGE || 'forge-ci:latest',
+    network: process.env.FORGE_CI_NETWORK || 'slirp4netns',
+    tmpfsSize: process.env.FORGE_CI_TMPFS_SIZE || '2G',
+    keepWorkdir: process.env.FORGE_CI_KEEP_WORKDIR === '1',
+  };
+
+  if (container.enabled) {
+    console.log(`✓ Containerized CI enabled (image: ${container.image}, network: ${container.network})`);
+  }
+
   return {
     dataDir,
     port,
@@ -92,6 +105,7 @@ export function getConfig(requirePassword: boolean = false): ForgeConfig {
     trustProxy,
     jobTimeout,
     jobTimeoutCheckInterval,
+    container,
   };
 }
 

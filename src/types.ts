@@ -47,6 +47,14 @@ export interface PostReceivePayload {
   deleted?: boolean;
 }
 
+export interface ContainerConfig {
+  enabled: boolean;
+  image: string;
+  network: string;
+  tmpfsSize: string;
+  keepWorkdir: boolean;
+}
+
 export interface ForgeConfig {
   dataDir: string;
   port: number;
@@ -60,4 +68,5 @@ export interface ForgeConfig {
   trustProxy: boolean; // Trust X-Forwarded-For header (only enable behind trusted reverse proxy)
   jobTimeout: number; // CI job timeout in seconds (default: 3600 = 1 hour)
   jobTimeoutCheckInterval: number; // How often to check for timeouts in ms (default: 30000 = 30 seconds)
+  container: ContainerConfig;
 }

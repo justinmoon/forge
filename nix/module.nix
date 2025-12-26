@@ -96,6 +96,25 @@ in
         Default is 3600 seconds (1 hour).
       '';
     };
+
+    containerizedCI = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Run CI jobs inside rootless Podman containers for isolation.
+        Each job gets its own network namespace, eliminating port conflicts.
+        Requires podman and slirp4netns to be available.
+      '';
+    };
+
+    ciImage = mkOption {
+      type = types.str;
+      default = "forge-ci:latest";
+      description = ''
+        Container image to use for CI jobs when containerizedCI is enabled.
+        Build with: nix build .#ci-image && podman load < result
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
@@ -133,9 +152,13 @@ in
         FORGE_JOB_TIMEOUT = toString cfg.jobTimeout;
         NODE_ENV = "production";
         HOME = cfg.dataDir;
+      } // optionalAttrs cfg.containerizedCI {
+        FORGE_CI_CONTAINER = "1";
+        FORGE_CI_IMAGE = cfg.ciImage;
       };
 
-      path = [ gitPkg bashPkg coreutils pkgs.nix pkgs.just ];
+      path = [ gitPkg bashPkg coreutils pkgs.nix pkgs.just ]
+        ++ optionals cfg.containerizedCI [ pkgs.podman pkgs.slirp4netns ];
       
       serviceConfig = {
         Type = "simple";
@@ -150,18 +173,19 @@ in
         ProtectSystem = "strict";
         ProtectHome = true;
         ReadWritePaths = [ cfg.dataDir ];
-        NoNewPrivileges = true;
+        NoNewPrivileges = !cfg.containerizedCI; # Podman needs new privileges for user namespaces
         PrivateDevices = true;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
-        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
-        RestrictNamespaces = true;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ]
+          ++ optionals cfg.containerizedCI [ "AF_NETLINK" ];
+        RestrictNamespaces = !cfg.containerizedCI; # Podman needs user/network namespaces
         LockPersonality = true;
         RestrictRealtime = true;
-        RestrictSUIDSGID = true;
+        RestrictSUIDSGID = !cfg.containerizedCI;
         RemoveIPC = true;
-        PrivateMounts = true;
+        PrivateMounts = !cfg.containerizedCI; # Podman needs mount namespace access
       };
     };
 

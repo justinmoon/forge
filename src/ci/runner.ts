@@ -36,12 +36,17 @@ interface CICommand {
 }
 
 const runningJobs = new Map<number, RunningJob>();
+const runningContainers = new Map<number, string>(); // jobId -> containerName
 let timeoutMonitorInterval: NodeJS.Timeout | null = null;
 const PG_PORT_BASE = 20000;
 const PG_PORT_RANGE = 20000;
 
 function getJobPgPort(jobId: number): number {
 	return PG_PORT_BASE + (jobId % PG_PORT_RANGE);
+}
+
+function getContainerName(jobId: number): string {
+	return `forge-ci-${jobId}`;
 }
 
 function terminateProcess(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -184,6 +189,105 @@ function getPostMergeCommand(worktreePath: string): CICommand | null {
 	return null;
 }
 
+interface ContainerJobOptions {
+	worktreePath: string;
+	ciCommand: CICommand;
+	jobId: number;
+	repo: string;
+	branch: string;
+	commit: string;
+	image: string;
+	network: string;
+	tmpfsSize: string;
+	onOutput: (chunk: string) => void;
+}
+
+async function runJobInContainer(
+	options: ContainerJobOptions,
+): Promise<number> {
+	const containerName = getContainerName(options.jobId);
+
+	const podmanArgs = [
+		"run",
+		"--rm",
+		"--name",
+		containerName,
+		`--network=${options.network}`,
+		"--userns=keep-id",
+		"-w",
+		"/work",
+		"--mount",
+		`type=bind,source=${options.worktreePath},target=/work`,
+		"--mount",
+		"type=bind,source=/nix,target=/nix,readonly",
+		"--mount",
+		`type=tmpfs,target=/tmp,tmpfs-size=${options.tmpfsSize}`,
+		"--mount",
+		`type=tmpfs,target=/home/ci,tmpfs-size=${options.tmpfsSize}`,
+		"--env",
+		"HOME=/home/ci",
+		"--env",
+		`FORGE_REPO=${options.repo}`,
+		"--env",
+		`FORGE_BRANCH=${options.branch}`,
+		"--env",
+		`FORGE_COMMIT=${options.commit}`,
+		"--env",
+		`FORGE_JOB_ID=${options.jobId}`,
+		options.image,
+		"bash",
+		"-lc",
+		`cd /work && ${options.ciCommand.command} ${options.ciCommand.args.join(" ")}`,
+	];
+
+	const containerProcess = spawn("podman", podmanArgs, {
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+
+	runningContainers.set(options.jobId, containerName);
+
+	containerProcess.stdout?.on("data", (data) => {
+		options.onOutput(data.toString());
+	});
+
+	containerProcess.stderr?.on("data", (data) => {
+		options.onOutput(data.toString());
+	});
+
+	return new Promise<number>((resolve) => {
+		containerProcess.on("close", (code) => {
+			runningContainers.delete(options.jobId);
+			resolve(code ?? 1);
+		});
+		containerProcess.on("error", (err) => {
+			runningContainers.delete(options.jobId);
+			options.onOutput(`\nContainer error: ${err.message}\n`);
+			resolve(1);
+		});
+	});
+}
+
+function killContainer(jobId: number): void {
+	const containerName = runningContainers.get(jobId);
+	if (!containerName) {
+		return;
+	}
+
+	try {
+		spawnSync("podman", ["kill", containerName], { stdio: "ignore" });
+	} catch (_err) {
+		// Container may already be stopped
+	}
+
+	try {
+		spawnSync("podman", ["rm", "-f", containerName], { stdio: "ignore" });
+	} catch (_err) {
+		// Container may already be removed
+	}
+
+	runningContainers.delete(jobId);
+}
+
 export function isJobRunning(jobId: number): boolean {
 	return runningJobs.has(jobId);
 }
@@ -194,9 +298,10 @@ export function getRunningJob(jobId: number): RunningJob | undefined {
 
 export function cancelJob(jobId: number, reason = "canceled"): boolean {
 	const job = runningJobs.get(jobId);
+	const hasContainer = runningContainers.has(jobId);
 
 	// If job is not in memory, check if it exists in DB as "running"
-	if (!job) {
+	if (!job && !hasContainer) {
 		const dbJob = getCIJob(jobId);
 		if (dbJob && dbJob.status === "running") {
 			// Stuck job - mark as canceled in DB
@@ -214,8 +319,16 @@ export function cancelJob(jobId: number, reason = "canceled"): boolean {
 	}
 
 	try {
-		terminateProcess(job.process, "SIGTERM");
-		runningJobs.delete(jobId);
+		// Kill container if running in containerized mode
+		if (hasContainer) {
+			killContainer(jobId);
+		}
+
+		// Kill process if running in direct mode
+		if (job) {
+			terminateProcess(job.process, "SIGTERM");
+			runningJobs.delete(jobId);
+		}
 
 		updateCIJob(jobId, {
 			status: reason,
@@ -367,54 +480,77 @@ export async function runPreMergeJob(
 		const startTime = Date.now();
 
 		const ciCommand = getPreMergeCommand(worktreePath);
-		logStream.write(`Forge: running ${ciCommand.label}\n`);
-		appendJobLogChunk(jobId, `Forge: running ${ciCommand.label}\n`);
+		const modeLabel = config.container.enabled ? "[container]" : "[direct]";
+		logStream.write(`Forge ${modeLabel}: running ${ciCommand.label}\n`);
+		appendJobLogChunk(jobId, `Forge ${modeLabel}: running ${ciCommand.label}\n`);
 
-		const ciProcess = spawn(ciCommand.command, ciCommand.args, {
-			cwd: worktreePath,
-			detached: true,
-			env: {
-				...process.env,
-				FORGE_REPO: repo,
-				FORGE_BRANCH: branch,
-				FORGE_COMMIT: headCommit,
-				FORGE_JOB_ID: String(jobId),
-				PGPORT: String(pgPort),
-				PG_PORT: String(pgPort),
-				PGDATA: pgDataPath,
-				PGLOGFILE: pgLogPath,
-			},
-		});
+		let exitCode: number;
 
-		runningJobs.set(jobId, {
-			jobId,
-			process: ciProcess,
-			startTime,
-		});
-
-		ciProcess.stdout?.on("data", (data) => {
-			logStream.write(data);
-			appendJobLogChunk(jobId, data.toString());
-		});
-
-		ciProcess.stderr?.on("data", (data) => {
-			logStream.write(data);
-			appendJobLogChunk(jobId, data.toString());
-		});
-
-		const exitCode = await new Promise<number>((resolve) => {
-			ciProcess.on("close", (code) => {
-				resolve(code ?? 1);
+		if (config.container.enabled) {
+			// Run in container
+			exitCode = await runJobInContainer({
+				worktreePath,
+				ciCommand,
+				jobId,
+				repo,
+				branch,
+				commit: headCommit,
+				image: config.container.image,
+				network: config.container.network,
+				tmpfsSize: config.container.tmpfsSize,
+				onOutput: (chunk) => {
+					logStream.write(chunk);
+					appendJobLogChunk(jobId, chunk);
+				},
 			});
-			ciProcess.on("error", (err) => {
-				logStream.write(`\nProcess error: ${err.message}\n`);
-				resolve(1);
+		} else {
+			// Run directly on host
+			const ciProcess = spawn(ciCommand.command, ciCommand.args, {
+				cwd: worktreePath,
+				detached: true,
+				env: {
+					...process.env,
+					FORGE_REPO: repo,
+					FORGE_BRANCH: branch,
+					FORGE_COMMIT: headCommit,
+					FORGE_JOB_ID: String(jobId),
+					PGPORT: String(pgPort),
+					PG_PORT: String(pgPort),
+					PGDATA: pgDataPath,
+					PGLOGFILE: pgLogPath,
+				},
 			});
-		});
+
+			runningJobs.set(jobId, {
+				jobId,
+				process: ciProcess,
+				startTime,
+			});
+
+			ciProcess.stdout?.on("data", (data) => {
+				logStream.write(data);
+				appendJobLogChunk(jobId, data.toString());
+			});
+
+			ciProcess.stderr?.on("data", (data) => {
+				logStream.write(data);
+				appendJobLogChunk(jobId, data.toString());
+			});
+
+			exitCode = await new Promise<number>((resolve) => {
+				ciProcess.on("close", (code) => {
+					resolve(code ?? 1);
+				});
+				ciProcess.on("error", (err) => {
+					logStream.write(`\nProcess error: ${err.message}\n`);
+					resolve(1);
+				});
+			});
+
+			runningJobs.delete(jobId);
+		}
 
 		logStream.end();
-		runningJobs.delete(jobId);
-
 		completeJobLog(jobId);
 
 		const finishedAt = new Date();
@@ -631,50 +767,74 @@ export async function runPostMergeJob(
 
 		const startTime = Date.now();
 
-		logStream.write(`Forge: running ${ciCommand.label}\n`);
-		appendJobLogChunk(jobId, `Forge: running ${ciCommand.label}\n`);
+		const modeLabel = config.container.enabled ? "[container]" : "[direct]";
+		logStream.write(`Forge ${modeLabel}: running ${ciCommand.label}\n`);
+		appendJobLogChunk(jobId, `Forge ${modeLabel}: running ${ciCommand.label}\n`);
 
-		const postMergeProcess = spawn(ciCommand.command, ciCommand.args, {
-			cwd: worktreePath,
-			detached: true,
-			env: {
-				...process.env,
-				FORGE_JOB_ID: String(jobId),
-				PGPORT: String(pgPort),
-				PG_PORT: String(pgPort),
-				PGDATA: pgDataPath,
-				PGLOGFILE: pgLogPath,
-			},
-		});
+		let exitCode: number;
 
-		runningJobs.set(jobId, {
-			jobId,
-			process: postMergeProcess,
-			startTime,
-		});
-
-		postMergeProcess.stdout?.on("data", (data) => {
-			logStream.write(data);
-			appendJobLogChunk(jobId, data.toString());
-		});
-
-		postMergeProcess.stderr?.on("data", (data) => {
-			logStream.write(data);
-			appendJobLogChunk(jobId, data.toString());
-		});
-
-		const exitCode = await new Promise<number>((resolve) => {
-			postMergeProcess.on("close", (code) => {
-				resolve(code ?? 1);
+		if (config.container.enabled) {
+			// Run in container
+			exitCode = await runJobInContainer({
+				worktreePath,
+				ciCommand,
+				jobId,
+				repo,
+				branch: "master",
+				commit: mergeCommit,
+				image: config.container.image,
+				network: config.container.network,
+				tmpfsSize: config.container.tmpfsSize,
+				onOutput: (chunk) => {
+					logStream.write(chunk);
+					appendJobLogChunk(jobId, chunk);
+				},
 			});
-			postMergeProcess.on("error", (err) => {
-				logStream.write(`\nProcess error: ${err.message}\n`);
-				resolve(1);
+		} else {
+			// Run directly on host
+			const postMergeProcess = spawn(ciCommand.command, ciCommand.args, {
+				cwd: worktreePath,
+				detached: true,
+				env: {
+					...process.env,
+					FORGE_JOB_ID: String(jobId),
+					PGPORT: String(pgPort),
+					PG_PORT: String(pgPort),
+					PGDATA: pgDataPath,
+					PGLOGFILE: pgLogPath,
+				},
 			});
-		});
+
+			runningJobs.set(jobId, {
+				jobId,
+				process: postMergeProcess,
+				startTime,
+			});
+
+			postMergeProcess.stdout?.on("data", (data) => {
+				logStream.write(data);
+				appendJobLogChunk(jobId, data.toString());
+			});
+
+			postMergeProcess.stderr?.on("data", (data) => {
+				logStream.write(data);
+				appendJobLogChunk(jobId, data.toString());
+			});
+
+			exitCode = await new Promise<number>((resolve) => {
+				postMergeProcess.on("close", (code) => {
+					resolve(code ?? 1);
+				});
+				postMergeProcess.on("error", (err) => {
+					logStream.write(`\nProcess error: ${err.message}\n`);
+					resolve(1);
+				});
+			});
+
+			runningJobs.delete(jobId);
+		}
 
 		logStream.end();
-		runningJobs.delete(jobId);
 		completeJobLog(jobId);
 
 		const finishedAt = new Date();

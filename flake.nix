@@ -40,10 +40,61 @@
           '';
         };
 
+        # Minimal CI container image with just, git, nix, and basic tools
+        ciImage = pkgs.dockerTools.buildLayeredImage {
+          name = "forge-ci";
+          tag = "latest";
+
+          contents = [
+            pkgs.bashInteractive
+            pkgs.coreutils
+            pkgs.git
+            pkgs.nix
+            pkgs.cacert
+            pkgs.just
+            pkgs.gnugrep
+            pkgs.gnutar
+            pkgs.gzip
+          ];
+
+          extraCommands = ''
+            # Create ci user home directory
+            mkdir -p home/ci
+            mkdir -p tmp
+            mkdir -p etc
+
+            # Create minimal passwd/group for ci user (uid 1000)
+            echo 'root:x:0:0:root:/root:/bin/bash' > etc/passwd
+            echo 'ci:x:1000:1000:CI User:/home/ci:/bin/bash' >> etc/passwd
+            echo 'root:x:0:' > etc/group
+            echo 'ci:x:1000:' >> etc/group
+
+            # NSS config for user lookups
+            echo 'hosts: files dns' > etc/nsswitch.conf
+
+            # Create nix config directory
+            mkdir -p etc/nix
+            echo 'experimental-features = nix-command flakes' > etc/nix/nix.conf
+            echo 'sandbox = false' >> etc/nix/nix.conf
+          '';
+
+          config = {
+            Env = [
+              "HOME=/home/ci"
+              "USER=ci"
+              "PATH=/bin:/usr/bin:${pkgs.nix}/bin:${pkgs.git}/bin:${pkgs.just}/bin"
+              "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            ];
+            WorkingDir = "/work";
+            User = "1000:1000";
+          };
+        };
+
       in {
         packages = {
           default = forge;
           forge = forge;
+          ci-image = ciImage;
         };
 
         devShells.default = pkgs.mkShell {
