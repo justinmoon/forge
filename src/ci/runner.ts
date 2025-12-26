@@ -223,7 +223,9 @@ async function runJobInContainer(
 		"--rm",
 		"--name",
 		containerName,
-		`--network=${options.network}`,
+		// Use 'none' network to avoid slirp4netns /dev/net/tun issues
+		// CI jobs typically don't need external network access
+		"--network=none",
 		"--user=ci", // Run as the ci user defined in the container image
 		"-w",
 		"/work",
